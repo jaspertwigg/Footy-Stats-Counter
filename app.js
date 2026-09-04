@@ -46,7 +46,7 @@
     }
     return {
       players: Array.from({ length: MAX_PLAYERS }, () => ({ name: "", stats: emptyStats() })),
-      activePlayer: 0,
+      activePlayer: null,
       history: [],
     };
   }
@@ -131,11 +131,13 @@
   const statGridEl = document.getElementById("stat-grid");
   const undoBtn = document.getElementById("undo-btn");
 
+  const activeScoreLabelEl = document.querySelector(".active-score-label");
+
   function ensureActivePlayerValid() {
-    const players = state.players;
-    if (!players[state.activePlayer] || players[state.activePlayer].name.trim() === "") {
-      const firstNamed = players.findIndex((p) => p.name.trim() !== "");
-      state.activePlayer = firstNamed === -1 ? 0 : firstNamed;
+    if (state.activePlayer === null) return;
+    const p = state.players[state.activePlayer];
+    if (!p || p.name.trim() === "") {
+      state.activePlayer = null;
     }
   }
 
@@ -166,15 +168,18 @@
       playerSelectorEl.appendChild(chip);
     });
 
-    const active = state.players[state.activePlayer];
-    activeScoreEl.textContent = scoreFor(active.stats);
+    const active = state.activePlayer === null ? null : state.players[state.activePlayer];
+    activeScoreLabelEl.textContent = active ? "Fantasy Score" : "Select a player";
+    activeScoreEl.textContent = active ? scoreFor(active.stats) : "–";
 
-    renderStatGrid(active.stats);
+    renderStatGrid(active ? active.stats : null);
+    statGridEl.classList.toggle("disabled", !active);
     undoBtn.disabled = state.history.length === 0;
   }
 
   function renderStatGrid(stats) {
     statGridEl.innerHTML = "";
+    const disabled = !stats;
     for (const def of STAT_DEFS) {
       const btn = document.createElement("button");
       btn.className = "stat-btn";
@@ -182,7 +187,7 @@
 
       const count = document.createElement("span");
       count.className = "stat-count";
-      count.textContent = stats[def.key] || 0;
+      count.textContent = disabled ? 0 : stats[def.key] || 0;
 
       const label = document.createElement("span");
       label.className = "stat-label";
@@ -224,6 +229,10 @@
     }
     state.history.push({ playerIdx: state.activePlayer, key, addsToMarks: !!def.addsToMarks });
     if (state.history.length > 200) state.history.shift();
+
+    // Deselect the player after every recorded stat so a stale selection
+    // can't cause the next tap to be logged against the wrong player.
+    state.activePlayer = null;
     saveState();
 
     if (btnEl) {
@@ -231,6 +240,7 @@
       setTimeout(() => btnEl.classList.remove("flash"), 140);
     }
     renderRecord();
+    showToast(`${def.label} recorded for ${player.name.trim()}`);
   }
 
   function decrementStat(key) {
@@ -241,6 +251,7 @@
     if (def.addsToMarks && player.stats.marks > 0) {
       player.stats.marks -= 1;
     }
+    state.activePlayer = null;
     saveState();
     renderRecord();
   }
@@ -249,12 +260,12 @@
     const last = state.history.pop();
     if (!last) return;
     const player = state.players[last.playerIdx];
+    const def = STAT_DEFS.find((d) => d.key === last.key);
     if (player.stats[last.key] > 0) player.stats[last.key] -= 1;
     if (last.addsToMarks && player.stats.marks > 0) player.stats.marks -= 1;
-    state.activePlayer = last.playerIdx;
     saveState();
     renderRecord();
-    showToast("Last stat undone");
+    showToast(`Undid ${def.label} for ${player.name.trim()}`);
   });
 
   // ---------- Summary tab ----------
@@ -263,6 +274,33 @@
   const summaryCardsEl = document.getElementById("summary-cards");
   const summaryTableEl = document.getElementById("summary-table");
   const resetBtn = document.getElementById("reset-btn");
+
+  // Table sort state: which column, and which direction. The score cards
+  // above the table always show highest-score-first regardless of this.
+  let summarySortKey = "score";
+  let summarySortDir = "desc";
+
+  const TABLE_COLUMNS = [
+    { key: "name", label: "Player" },
+    ...STAT_DEFS.map((d) => ({ key: d.key, label: abbrev(d) })),
+    { key: "score", label: "Score" },
+  ];
+
+  function sortRows(rows, key, dir) {
+    const sorted = [...rows].sort((a, b) => {
+      let cmp;
+      if (key === "name") {
+        cmp = a.name.localeCompare(b.name);
+      } else if (key === "score") {
+        cmp = a.score - b.score;
+      } else {
+        cmp = (a.stats[key] || 0) - (b.stats[key] || 0);
+      }
+      if (cmp === 0) cmp = a.name.localeCompare(b.name);
+      return dir === "desc" ? -cmp : cmp;
+    });
+    return sorted;
+  }
 
   function renderSummary() {
     const named = state.players.filter((p) => p.name.trim() !== "");
@@ -274,10 +312,11 @@
     summaryEmptyEl.hidden = true;
     summaryContentEl.style.display = "block";
 
-    const ranked = named
-      .map((p) => ({ name: p.name.trim(), stats: p.stats, score: scoreFor(p.stats) }))
-      .sort((a, b) => b.score - a.score);
+    const base = named.map((p) => ({ name: p.name.trim(), stats: p.stats, score: scoreFor(p.stats) }));
 
+    // Score cards: always highest fantasy score first, recalculated fresh
+    // every time this renders so the leaderboard order stays live.
+    const ranked = sortRows(base, "score", "desc");
     summaryCardsEl.innerHTML = "";
     ranked.forEach((p, i) => {
       const card = document.createElement("div");
@@ -292,10 +331,33 @@
       summaryCardsEl.appendChild(card);
     });
 
+    // Detail table: sorted by whichever column was last tapped.
+    const tableRows = sortRows(base, summarySortKey, summarySortDir);
+
     const thead = summaryTableEl.querySelector("thead");
     const tbody = summaryTableEl.querySelector("tbody");
-    thead.innerHTML = `<tr><th>Player</th>${STAT_DEFS.map((d) => `<th>${abbrev(d)}</th>`).join("")}<th>Score</th></tr>`;
-    tbody.innerHTML = ranked
+
+    thead.innerHTML = "";
+    const headRow = document.createElement("tr");
+    TABLE_COLUMNS.forEach((col) => {
+      const th = document.createElement("th");
+      th.className = "sortable" + (col.key === summarySortKey ? " sorted" : "");
+      const arrow = col.key === summarySortKey ? (summarySortDir === "desc" ? " ▼" : " ▲") : "";
+      th.textContent = col.label + arrow;
+      th.addEventListener("click", () => {
+        if (summarySortKey === col.key) {
+          summarySortDir = summarySortDir === "desc" ? "asc" : "desc";
+        } else {
+          summarySortKey = col.key;
+          summarySortDir = col.key === "name" ? "asc" : "desc";
+        }
+        renderSummary();
+      });
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+
+    tbody.innerHTML = tableRows
       .map(
         (p) => `<tr><td>${escapeHtml(p.name)}</td>${STAT_DEFS.map(
           (d) => `<td>${p.stats[d.key] || 0}</td>`
