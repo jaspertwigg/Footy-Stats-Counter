@@ -89,6 +89,14 @@ Firebase project (Google's realtime database). This is a one-time setup for
 whoever maintains the app; nobody else needs to do anything beyond tapping
 the game-code button.
 
+This project's Firebase console is already set up at
+[console.firebase.google.com/project/footy-stats-counter](https://console.firebase.google.com/project/footy-stats-counter/overview),
+and its Firestore security rules live directly at
+[.../firestore/databases/-default-/security/rules](https://console.firebase.google.com/project/footy-stats-counter/firestore/databases/-default-/security/rules)
+— editing rules works best from a desktop browser (the mobile Firebase
+console doesn't render the code editor well; use "Request Desktop Website"
+in Safari if you're on a phone).
+
 1. Go to [console.firebase.google.com](https://console.firebase.google.com/)
    and sign in with any Google account.
 2. Click **Add project**, give it any name, and create it (the free "Spark"
