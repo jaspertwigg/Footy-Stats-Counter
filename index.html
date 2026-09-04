@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Footy Stats Counter</title>
+
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#0b3d22" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Footy Stats" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <h1>Footy Stats Counter</h1>
+</header>
+
+<main id="view-players" class="view active">
+  <p class="hint">Enter up to 5 player names. This only needs to be done once before the game.</p>
+  <div id="player-inputs" class="player-inputs"></div>
+  <p class="hint subtle">Names save automatically.</p>
+</main>
+
+<main id="view-record" class="view">
+  <div id="record-empty" class="empty-state" hidden>
+    <p>Add at least one player on the <strong>Players</strong> tab to start recording stats.</p>
+  </div>
+
+  <div id="record-content">
+    <div id="player-selector" class="player-selector"></div>
+
+    <div class="active-score-bar">
+      <div class="active-score-label">Fantasy Score</div>
+      <div id="active-score" class="active-score-value">0</div>
+    </div>
+
+    <div id="stat-grid" class="stat-grid"></div>
+
+    <button id="undo-btn" class="undo-btn" disabled>↺ Undo Last Stat</button>
+  </div>
+</main>
+
+<main id="view-summary" class="view">
+  <div id="summary-empty" class="empty-state" hidden>
+    <p>Add players and record some stats to see the summary here.</p>
+  </div>
+  <div id="summary-content">
+    <div id="summary-cards" class="summary-cards"></div>
+
+    <div class="table-scroll">
+      <table id="summary-table" class="summary-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <button id="reset-btn" class="reset-btn">Reset Game Stats</button>
+  </div>
+</main>
+
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="players">
+    <span class="tab-icon">📝</span><span>Players</span>
+  </button>
+  <button class="tab-btn" data-tab="record">
+    <span class="tab-icon">🏉</span><span>Record</span>
+  </button>
+  <button class="tab-btn" data-tab="summary">
+    <span class="tab-icon">📊</span><span>Summary</span>
+  </button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
