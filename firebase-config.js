@@ -7,10 +7,10 @@
 // secret, access is controlled by the Firestore security rules you set up
 // in the Firebase console (see README.md), not by hiding this file.
 window.FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyDSwKatGFFxee5-UT3gWmqzCfJ4BABcz3Q",
+  authDomain: "footy-stats-counter.firebaseapp.com",
+  projectId: "footy-stats-counter",
+  storageBucket: "footy-stats-counter.firebasestorage.app",
+  messagingSenderId: "69201039438",
+  appId: "1:69201039438:web:b5a131ddc1e2705ecbf31f",
 };
