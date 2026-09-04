@@ -128,19 +128,6 @@ html, body {
   color: #04140b;
 }
 
-.active-score-bar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px 18px;
-  margin-bottom: 12px;
-}
-.active-score-label { color: var(--text-dim); font-size: 14px; font-weight: 600; }
-.active-score-value { font-size: 30px; font-weight: 800; color: var(--green-strong); font-variant-numeric: tabular-nums; }
-
 .stat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -157,37 +144,20 @@ html, body {
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: 16px;
-  padding: 14px 10px 12px;
-  min-height: 74px;
+  padding: 20px 10px;
+  min-height: 84px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   color: var(--text);
   transition: transform 0.06s ease, background 0.15s ease;
 }
 .stat-btn:active { transform: scale(0.95); background: var(--surface-2); }
 .stat-btn.flash { background: var(--green); }
-.stat-btn.flash .stat-label,
-.stat-btn.flash .stat-count { color: #04140b; }
+.stat-btn.flash .stat-label { color: #04140b; }
 
-.stat-label { font-size: 15px; font-weight: 700; }
-.stat-points { font-size: 11px; color: var(--text-dim); }
-.stat-btn.flash .stat-points { color: #0b3d22; }
-.stat-count {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--green-strong);
-  background: rgba(255,255,255,0.06);
-  border-radius: 8px;
-  padding: 1px 7px;
-  min-width: 20px;
-  text-align: center;
-}
+.stat-label { font-size: 18px; font-weight: 700; }
+
 .stat-minus {
   position: absolute;
   top: 6px;

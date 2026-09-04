@@ -127,11 +127,8 @@
   const recordEmptyEl = document.getElementById("record-empty");
   const recordContentEl = document.getElementById("record-content");
   const playerSelectorEl = document.getElementById("player-selector");
-  const activeScoreEl = document.getElementById("active-score");
   const statGridEl = document.getElementById("stat-grid");
   const undoBtn = document.getElementById("undo-btn");
-
-  const activeScoreLabelEl = document.querySelector(".active-score-label");
 
   function ensureActivePlayerValid() {
     if (state.activePlayer === null) return;
@@ -169,37 +166,22 @@
     });
 
     const active = state.activePlayer === null ? null : state.players[state.activePlayer];
-    activeScoreLabelEl.textContent = active ? "Fantasy Score" : "Select a player";
-    activeScoreEl.textContent = active ? scoreFor(active.stats) : "–";
 
-    renderStatGrid(active ? active.stats : null);
+    renderStatGrid();
     statGridEl.classList.toggle("disabled", !active);
     undoBtn.disabled = state.history.length === 0;
   }
 
-  function renderStatGrid(stats) {
+  function renderStatGrid() {
     statGridEl.innerHTML = "";
-    const disabled = !stats;
     for (const def of STAT_DEFS) {
       const btn = document.createElement("button");
       btn.className = "stat-btn";
       btn.dataset.key = def.key;
 
-      const count = document.createElement("span");
-      count.className = "stat-count";
-      count.textContent = disabled ? 0 : stats[def.key] || 0;
-
       const label = document.createElement("span");
       label.className = "stat-label";
       label.textContent = def.label;
-
-      const pts = document.createElement("span");
-      pts.className = "stat-points";
-      pts.textContent = def.addsToMarks
-        ? "+1 mark"
-        : def.points >= 0
-        ? `+${def.points} pt${def.points === 1 ? "" : "s"}`
-        : `${def.points} pts`;
 
       const minus = document.createElement("button");
       minus.className = "stat-minus";
@@ -210,9 +192,7 @@
       });
 
       btn.appendChild(minus);
-      btn.appendChild(count);
       btn.appendChild(label);
-      btn.appendChild(pts);
 
       btn.addEventListener("click", () => incrementStat(def.key, btn));
 
