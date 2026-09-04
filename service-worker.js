@@ -1,9 +1,10 @@
-const CACHE = "footy-stats-v2";
+const CACHE = "footy-stats-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./firebase-config.js",
   "./manifest.webmanifest",
   "./icons/icon-180.png",
   "./icons/icon-192.png",

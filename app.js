@@ -51,6 +51,7 @@
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    pushToCloud();
   }
 
   function scoreFor(stats) {
@@ -60,6 +61,149 @@
     }
     return total;
   }
+
+  // ---------- Cloud sync (live shared game) ----------
+  // Each device only ever writes its own players to its own document under
+  // games/{gameCode}/devices/{deviceId} — there's no shared document being
+  // edited by multiple devices at once, so there's nothing to merge-conflict.
+  // The Summary tab is the only place that reads other devices' documents
+  // and combines them into one live view; Players and Record stay local.
+  const GAME_CODE_KEY = "footy-game-code";
+  const DEVICE_ID_KEY = "footy-device-id";
+  const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L, easy to read aloud
+
+  function randomCode(length) {
+    return Array.from({ length }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
+  }
+
+  function sanitizeGameCode(raw) {
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  }
+
+  function getDeviceId() {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = randomCode(12);
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  }
+  const DEVICE_ID = getDeviceId();
+
+  let gameCode = localStorage.getItem(GAME_CODE_KEY) || "";
+  let db = null;
+  let unsubscribeDevices = null;
+  let remoteDevices = {}; // deviceId -> that device's named players, from the last snapshot
+
+  function initFirebase() {
+    try {
+      const configured =
+        typeof firebase !== "undefined" &&
+        window.FIREBASE_CONFIG &&
+        window.FIREBASE_CONFIG.apiKey &&
+        window.FIREBASE_CONFIG.apiKey.indexOf("YOUR_") !== 0;
+      if (!configured) return;
+      firebase.initializeApp(window.FIREBASE_CONFIG);
+      db = firebase.firestore();
+    } catch (e) {
+      console.warn("Cloud sync unavailable:", e);
+      db = null;
+    }
+  }
+  initFirebase();
+
+  let pushTimer = null;
+  function pushToCloud() {
+    if (!db || !gameCode) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      db.collection("games")
+        .doc(gameCode)
+        .collection("devices")
+        .doc(DEVICE_ID)
+        .set({
+          players: state.players
+            .filter((p) => p.name.trim() !== "")
+            .map((p) => ({ name: p.name.trim(), stats: p.stats })),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+        .catch((e) => console.warn("Cloud sync push failed:", e));
+    }, 300);
+  }
+
+  function subscribeToGame() {
+    if (unsubscribeDevices) {
+      unsubscribeDevices();
+      unsubscribeDevices = null;
+    }
+    remoteDevices = {};
+    if (!db || !gameCode) {
+      renderSummary();
+      return;
+    }
+    unsubscribeDevices = db
+      .collection("games")
+      .doc(gameCode)
+      .collection("devices")
+      .onSnapshot(
+        (snap) => {
+          remoteDevices = {};
+          snap.forEach((doc) => {
+            if (doc.id === DEVICE_ID) return; // our own data is read straight from local state
+            const data = doc.data();
+            remoteDevices[doc.id] = (data && data.players) || [];
+          });
+          renderSummary();
+        },
+        (e) => console.warn("Cloud sync listen failed:", e)
+      );
+  }
+
+  const gameCodeBtn = document.getElementById("game-code-btn");
+
+  function updateGameCodeBtn() {
+    gameCodeBtn.textContent = gameCode ? `Game: ${gameCode}` : "Solo mode";
+  }
+
+  gameCodeBtn.addEventListener("click", () => {
+    if (!db) {
+      alert(
+        'Cloud sync isn\'t set up yet. See the "Set up live sharing" section of README.md to connect a free Firebase project.'
+      );
+      return;
+    }
+
+    const hadCode = !!gameCode;
+    const oldCode = gameCode;
+    const message = hadCode
+      ? `Currently in game "${gameCode}". Enter a different code to switch, clear the text to go solo, or Cancel to stay as you are.`
+      : "Enter a game code to join your team's shared game, or leave this blank to create a new one.";
+    const input = prompt(message, gameCode);
+    if (input === null) return; // cancelled, no change
+
+    const code = sanitizeGameCode(input);
+    if (!code) {
+      if (hadCode) {
+        gameCode = "";
+        localStorage.removeItem(GAME_CODE_KEY);
+      } else {
+        gameCode = randomCode(5);
+        localStorage.setItem(GAME_CODE_KEY, gameCode);
+        alert(`Your new game code is ${gameCode}. Share it with your team so they can join the same live scoreboard.`);
+      }
+    } else {
+      gameCode = code;
+      localStorage.setItem(GAME_CODE_KEY, gameCode);
+    }
+
+    if (hadCode && oldCode !== gameCode) {
+      db.collection("games").doc(oldCode).collection("devices").doc(DEVICE_ID).delete().catch(() => {});
+    }
+
+    updateGameCodeBtn();
+    pushToCloud();
+    subscribeToGame();
+  });
 
   // ---------- Tab switching ----------
   const views = {
@@ -279,6 +423,7 @@
   // ---------- Summary tab ----------
   const summaryEmptyEl = document.getElementById("summary-empty");
   const summaryContentEl = document.getElementById("summary-content");
+  const summarySyncStatusEl = document.getElementById("summary-sync-status");
   const summaryCardsEl = document.getElementById("summary-cards");
   const summaryTableEl = document.getElementById("summary-table");
   const resetBtn = document.getElementById("reset-btn");
@@ -311,7 +456,21 @@
   }
 
   function renderSummary() {
-    const named = state.players.filter((p) => p.name.trim() !== "");
+    const localNamed = state.players
+      .filter((p) => p.name.trim() !== "")
+      .map((p) => ({ name: p.name.trim(), stats: p.stats }));
+
+    const remoteNamed = [];
+    for (const players of Object.values(remoteDevices)) {
+      for (const p of players) {
+        if (p && typeof p.name === "string" && p.name.trim() !== "") {
+          remoteNamed.push({ name: p.name.trim(), stats: Object.assign(emptyStats(), p.stats || {}) });
+        }
+      }
+    }
+
+    const named = [...localNamed, ...remoteNamed];
+
     if (named.length === 0) {
       summaryEmptyEl.hidden = false;
       summaryContentEl.style.display = "none";
@@ -320,7 +479,19 @@
     summaryEmptyEl.hidden = true;
     summaryContentEl.style.display = "block";
 
-    const base = named.map((p) => ({ name: p.name.trim(), stats: p.stats, score: scoreFor(p.stats) }));
+    if (!gameCode) {
+      summarySyncStatusEl.textContent = "Solo mode — showing only your own players.";
+    } else if (!db) {
+      summarySyncStatusEl.textContent = `Game ${gameCode} — cloud sync unavailable right now.`;
+    } else {
+      const otherCount = Object.keys(remoteDevices).length;
+      summarySyncStatusEl.textContent =
+        otherCount > 0
+          ? `Live in game ${gameCode} — syncing with ${otherCount} other device${otherCount === 1 ? "" : "s"}.`
+          : `Live in game ${gameCode} — waiting for others to join.`;
+    }
+
+    const base = named.map((p) => ({ name: p.name, stats: p.stats, score: scoreFor(p.stats) }));
 
     // Score cards: always highest fantasy score first, recalculated fresh
     // every time this renders so the leaderboard order stays live.
@@ -397,13 +568,13 @@
   }
 
   resetBtn.addEventListener("click", () => {
-    if (!confirm("Reset all recorded stats for this game? Player names are kept.")) return;
+    if (!confirm("Reset your recorded stats for this game? Player names are kept. This only affects your own players, not anyone else sharing this game.")) return;
     for (const p of state.players) p.stats = emptyStats();
     state.history = [];
     saveState();
     renderSummary();
     renderRecord();
-    showToast("Game stats reset");
+    showToast("Your stats have been reset");
   });
 
   // ---------- Toast ----------
@@ -420,9 +591,11 @@
   }
 
   // ---------- Init ----------
+  updateGameCodeBtn();
   renderPlayerInputs();
   renderRecord();
   renderSummary();
+  subscribeToGame();
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {

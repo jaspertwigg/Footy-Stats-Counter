@@ -18,6 +18,7 @@
 
 <header class="app-header">
   <h1>Footy Stats Counter</h1>
+  <button id="game-code-btn" class="game-code-btn">Solo mode</button>
 </header>
 
 <main id="view-players" class="view active">
@@ -46,6 +47,7 @@
     <p>Add players and record some stats to see the summary here.</p>
   </div>
   <div id="summary-content">
+    <p id="summary-sync-status" class="sync-status"></p>
     <div id="summary-cards" class="summary-cards"></div>
 
     <div class="table-scroll">
@@ -55,7 +57,7 @@
       </table>
     </div>
 
-    <button id="reset-btn" class="reset-btn">Reset Game Stats</button>
+    <button id="reset-btn" class="reset-btn">Reset My Stats</button>
   </div>
 </main>
 
@@ -73,6 +75,9 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
