@@ -33,22 +33,18 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.players) && parsed.players.length === MAX_PLAYERS) {
-          for (const p of parsed.players) {
-            p.stats = Object.assign(emptyStats(), p.stats || {});
-          }
-          if (!Array.isArray(parsed.history)) parsed.history = [];
-          return parsed;
+        if (parsed && Array.isArray(parsed.players)) {
+          const players = parsed.players.slice(0, MAX_PLAYERS).map((p) => ({
+            name: typeof p.name === "string" ? p.name : "",
+            stats: Object.assign(emptyStats(), (p && p.stats) || {}),
+          }));
+          return { players, activePlayer: null, history: [] };
         }
       }
     } catch (e) {
       /* corrupt storage, fall through to fresh state */
     }
-    return {
-      players: Array.from({ length: MAX_PLAYERS }, () => ({ name: "", stats: emptyStats() })),
-      activePlayer: null,
-      history: [],
-    };
+    return { players: [], activePlayer: null, history: [] };
   }
 
   const state = loadState();
@@ -63,10 +59,6 @@
       total += (stats[def.key] || 0) * def.points;
     }
     return total;
-  }
-
-  function activePlayers() {
-    return state.players.filter((p) => p.name.trim().length > 0);
   }
 
   // ---------- Tab switching ----------
@@ -94,9 +86,18 @@
 
   // ---------- Players tab ----------
   const playerInputsEl = document.getElementById("player-inputs");
+  const addPlayerBtn = document.getElementById("add-player-btn");
 
   function renderPlayerInputs() {
     playerInputsEl.innerHTML = "";
+
+    if (state.players.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint subtle";
+      empty.textContent = "No players yet — tap Add Player to get started.";
+      playerInputsEl.appendChild(empty);
+    }
+
     state.players.forEach((p, idx) => {
       const row = document.createElement("div");
       row.className = "player-row";
@@ -117,11 +118,38 @@
         saveState();
       });
 
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "player-remove";
+      removeBtn.textContent = "✕";
+      removeBtn.setAttribute("aria-label", "Remove player");
+      removeBtn.addEventListener("click", () => {
+        state.players.splice(idx, 1);
+        state.activePlayer = null;
+        state.history = [];
+        saveState();
+        renderPlayerInputs();
+      });
+
       row.appendChild(num);
       row.appendChild(input);
+      row.appendChild(removeBtn);
       playerInputsEl.appendChild(row);
     });
+
+    const full = state.players.length >= MAX_PLAYERS;
+    addPlayerBtn.disabled = full;
+    addPlayerBtn.textContent = full ? "Maximum 5 players" : "+ Add Player";
   }
+
+  addPlayerBtn.addEventListener("click", () => {
+    if (state.players.length >= MAX_PLAYERS) return;
+    state.players.push({ name: "", stats: emptyStats() });
+    saveState();
+    renderPlayerInputs();
+    const inputs = playerInputsEl.querySelectorAll(".player-row input");
+    const last = inputs[inputs.length - 1];
+    if (last) last.focus();
+  });
 
   // ---------- Record tab ----------
   const recordEmptyEl = document.getElementById("record-empty");

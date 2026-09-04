@@ -94,6 +94,41 @@ html, body {
 }
 .player-row input::placeholder { color: #5c6a61; }
 
+.player-remove {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(229, 72, 77, 0.12);
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.player-remove:active { background: rgba(229, 72, 77, 0.25); }
+
+.add-player-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1.5px dashed var(--green);
+  background: rgba(31, 163, 99, 0.08);
+  color: var(--green-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+.add-player-btn:active:not(:disabled) { background: rgba(31, 163, 99, 0.18); }
+.add-player-btn:disabled {
+  border-color: var(--border);
+  color: var(--text-dim);
+  background: transparent;
+  opacity: 0.6;
+}
+
 /* Record tab */
 .empty-state {
   margin-top: 40px;
