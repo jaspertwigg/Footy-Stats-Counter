@@ -27,8 +27,10 @@
     <div class="game-info-title" id="setup-current-title"></div>
     <div class="game-info-meta" id="setup-current-meta"></div>
     <div class="game-info-code">Code: <span id="setup-current-code"></span></div>
-    <button id="setup-switch-btn" class="setup-choice-btn">Switch Game</button>
+    <button id="setup-edit-btn" class="setup-choice-btn">Edit Details</button>
+    <button id="setup-switch-btn" class="setup-secondary-btn">Switch Game</button>
     <button id="setup-leave-btn" class="setup-secondary-btn">Leave — play solo</button>
+    <button id="setup-delete-btn" class="setup-danger-btn">Delete This Game</button>
   </div>
 
   <div id="setup-choose">
@@ -38,7 +40,7 @@
   </div>
 
   <div id="setup-create" class="setup-form" hidden>
-    <p class="hint">New game details</p>
+    <p class="hint" id="setup-create-heading">New game details</p>
     <label class="field-label">Competition
       <input id="setup-competition" type="text" placeholder="e.g. Under 16s Metro League" autocomplete="off" />
     </label>
@@ -66,6 +68,11 @@
     <input id="setup-join-code" type="text" placeholder="e.g. TIGR7" class="code-input" autocapitalize="characters" autocomplete="off" />
     <button id="setup-join-submit" class="setup-choice-btn">Join Game</button>
     <button id="setup-join-cancel" class="setup-secondary-btn">Cancel</button>
+  </div>
+
+  <div id="setup-saved-section" class="setup-saved-section" hidden>
+    <p class="hint">Saved games</p>
+    <div id="setup-saved-list" class="saved-games-list"></div>
   </div>
 </main>
 
@@ -105,6 +112,7 @@
       </table>
     </div>
 
+    <button id="save-game-btn" class="setup-choice-btn">Save Game</button>
     <button id="reset-btn" class="reset-btn">Reset My Stats</button>
   </div>
 </main>

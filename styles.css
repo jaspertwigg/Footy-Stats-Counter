@@ -168,18 +168,87 @@ html, body {
 .code-input:focus { outline: 2px solid var(--green); outline-offset: -1px; }
 
 .recent-games-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
-.recent-game-card {
+.recent-game-card { position: relative; }
+.recent-game-main {
+  width: 100%;
   text-align: left;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 12px 42px 12px 14px;
   color: var(--text);
 }
-.recent-game-card:active { background: var(--surface-2); }
+.recent-game-main:active { background: var(--surface-2); }
 .recent-game-title { font-size: 16px; font-weight: 700; }
 .recent-game-meta { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; }
 .recent-game-code { color: var(--green-strong); font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+.recent-game-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(229, 72, 77, 0.12);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.recent-game-delete:active { background: rgba(229, 72, 77, 0.25); }
+
+.setup-danger-btn {
+  width: 100%;
+  margin-top: 18px;
+  padding: 13px;
+  border-radius: 14px;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+  background: rgba(229, 72, 77, 0.1);
+  color: var(--red);
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.setup-danger-btn:active { background: rgba(229, 72, 77, 0.2); }
+
+.setup-saved-section { margin-top: 26px; }
+.saved-games-list { display: flex; flex-direction: column; gap: 10px; }
+.saved-game-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 42px 12px 14px;
+}
+.saved-game-title { font-size: 16px; font-weight: 700; }
+.saved-game-meta { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; }
+.saved-game-timestamp { color: var(--text-dim); font-size: 11.5px; margin-top: 4px; }
+.saved-game-players { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.saved-game-player {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13.5px;
+}
+.saved-game-player .score { color: var(--green-strong); font-weight: 700; }
+.saved-game-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(229, 72, 77, 0.12);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.saved-game-delete:active { background: rgba(229, 72, 77, 0.25); }
 
 /* Players tab */
 .player-inputs { display: flex; flex-direction: column; gap: 12px; }

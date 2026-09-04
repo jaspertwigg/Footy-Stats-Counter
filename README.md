@@ -39,6 +39,10 @@ that works offline.
   1. **Game** — create a new shared game (competition, teams, round, date —
      generates a code) or join one (from a list of games you've used before,
      or by typing in a code). Optional — skip it to just use the app solo.
+     The current game's card has **Edit Details**, **Switch Game**, **Leave
+     — play solo**, and **Delete This Game** (a real delete — it removes the
+     game for everyone sharing that code, not just you). Games in the
+     "joined before" list can also be deleted individually.
   2. **Players** — add/remove as many players as you need. Local to this
      device only.
   3. **Record** — pick the active player and tap stats as they happen. Local
@@ -46,7 +50,11 @@ that works offline.
   4. **Summary** — the only tab where other people's contributions show up
      (see "Set up live sharing" below). Full stat breakdown and fantasy score
      for every player, sortable by tapping any column, with a reset for your
-     own stats.
+     own stats. **Save Game** freezes a snapshot of the current scoreboard
+     (players, stats, scores, game details) into a "Saved games" list on the
+     Game tab — handy before you reset stats or delete a game, since neither
+     of those touches saved records. Saved games are local to this device
+     only (not synced) and can be deleted individually.
 - **Live sharing across phones** (optional): everyone adds and records their
   own players on their own phone as normal, and the Summary tab merges
   everyone's players into one live, shared scoreboard in real time. See

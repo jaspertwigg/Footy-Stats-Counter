@@ -237,13 +237,53 @@
     renderSetupTab();
   }
 
+  // Deleting a game removes it everywhere: this device's local history, and
+  // (when cloud sync is on) the shared games/{code} document plus everyone's
+  // per-device documents under it. There's no login system protecting a
+  // game code, so this is a real delete, not just "hide it from me."
+  function deleteGame(code) {
+    recentGames = recentGames.filter((g) => g.code !== code);
+    localStorage.setItem(RECENT_GAMES_KEY, JSON.stringify(recentGames));
+
+    if (db) {
+      try {
+        db.collection("games")
+          .doc(code)
+          .collection("devices")
+          .get()
+          .then((snap) => snap.forEach((doc) => doc.ref.delete().catch(() => {})))
+          .catch((e) => console.warn("Failed to delete game devices:", e));
+        db.collection("games")
+          .doc(code)
+          .delete()
+          .catch((e) => console.warn("Failed to delete game:", e));
+      } catch (e) {
+        console.warn("Failed to delete game:", e);
+      }
+    }
+
+    if (gameCode === code) {
+      gameCode = "";
+      currentGameMeta = {};
+      localStorage.removeItem(GAME_CODE_KEY);
+      updateGameCodeBtn();
+      subscribeToGame();
+      setupView = "choose";
+    }
+    renderSetupTab();
+  }
+
   const setupCurrentEl = document.getElementById("setup-current");
   const setupChooseEl = document.getElementById("setup-choose");
   const setupCreateEl = document.getElementById("setup-create");
   const setupJoinEl = document.getElementById("setup-join");
+  const setupCreateHeadingEl = document.getElementById("setup-create-heading");
+  const setupCreateSubmitEl = document.getElementById("setup-create-submit");
+  const setupGeneratedCodeEl = document.getElementById("setup-generated-code");
 
   let setupView = gameCode ? "current" : "choose"; // "current" | "choose" | "create" | "join"
   let setupGeneratedCode = "";
+  let setupEditingCode = null; // non-null while "create" view is being used to edit an existing game
 
   function renderSetupTab() {
     setupCurrentEl.hidden = setupView !== "current";
@@ -262,6 +302,8 @@
     if (setupView === "join") {
       renderRecentGamesList();
     }
+
+    renderSavedGamesList();
   }
 
   function renderRecentGamesList() {
@@ -275,19 +317,35 @@
       return;
     }
     recentGames.forEach((g) => {
-      const card = document.createElement("button");
+      const card = document.createElement("div");
       card.className = "recent-game-card";
       const title = g.teams || g.competition || "Untitled game";
       const metaParts = [g.competition, g.round, g.date].filter(Boolean);
-      card.innerHTML = `
+
+      const main = document.createElement("button");
+      main.className = "recent-game-main";
+      main.innerHTML = `
         <div class="recent-game-title">${escapeHtml(title)}</div>
         ${metaParts.length ? `<div class="recent-game-meta">${escapeHtml(metaParts.join(" • "))}</div>` : ""}
         <div class="recent-game-code">Code: ${escapeHtml(g.code)}</div>
       `;
-      card.addEventListener("click", () => {
+      main.addEventListener("click", () => {
         joinGame(g.code, g);
         switchTab("players");
       });
+
+      const del = document.createElement("button");
+      del.className = "recent-game-delete";
+      del.textContent = "✕";
+      del.setAttribute("aria-label", "Delete game");
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete "${title}"? This removes it for everyone, not just you.`)) return;
+        deleteGame(g.code);
+      });
+
+      card.appendChild(main);
+      card.appendChild(del);
       wrap.appendChild(card);
     });
   }
@@ -302,6 +360,24 @@
     leaveGame();
   });
 
+  document.getElementById("setup-delete-btn").addEventListener("click", () => {
+    if (!confirm(`Delete "${gameCode}"? This removes it for everyone, not just you, and can't be undone.`)) return;
+    deleteGame(gameCode);
+  });
+
+  document.getElementById("setup-edit-btn").addEventListener("click", () => {
+    setupEditingCode = gameCode;
+    document.getElementById("setup-competition").value = currentGameMeta.competition || "";
+    document.getElementById("setup-teams").value = currentGameMeta.teams || "";
+    document.getElementById("setup-round").value = currentGameMeta.round || "";
+    document.getElementById("setup-date").value = currentGameMeta.date || "";
+    setupGeneratedCodeEl.textContent = gameCode;
+    setupCreateHeadingEl.textContent = "Edit game details";
+    setupCreateSubmitEl.textContent = "Save Changes";
+    setupView = "create";
+    renderSetupTab();
+  });
+
   document.getElementById("setup-create-btn").addEventListener("click", () => {
     if (!db) {
       alert(
@@ -309,8 +385,11 @@
       );
       return;
     }
+    setupEditingCode = null;
     setupGeneratedCode = randomCode(5);
-    document.getElementById("setup-generated-code").textContent = setupGeneratedCode;
+    setupGeneratedCodeEl.textContent = setupGeneratedCode;
+    setupCreateHeadingEl.textContent = "New game details";
+    setupCreateSubmitEl.textContent = "Create Game";
     document.getElementById("setup-competition").value = "";
     document.getElementById("setup-teams").value = "";
     document.getElementById("setup-round").value = "";
@@ -320,6 +399,7 @@
   });
 
   document.getElementById("setup-create-cancel").addEventListener("click", () => {
+    setupEditingCode = null;
     setupView = gameCode ? "current" : "choose";
     renderSetupTab();
   });
@@ -331,6 +411,28 @@
       round: document.getElementById("setup-round").value.trim(),
       date: document.getElementById("setup-date").value,
     };
+
+    if (setupEditingCode) {
+      const code = setupEditingCode;
+      currentGameMeta = meta;
+      addRecentGame({ code, ...meta });
+      if (db) {
+        try {
+          db.collection("games")
+            .doc(code)
+            .set(meta, { merge: true })
+            .catch((e) => console.warn("Failed to save game details:", e));
+        } catch (e) {
+          console.warn("Failed to save game details:", e);
+        }
+      }
+      setupEditingCode = null;
+      setupView = "current";
+      renderSetupTab();
+      showToast("Game details updated");
+      return;
+    }
+
     const code = setupGeneratedCode;
 
     if (db) {
@@ -655,7 +757,7 @@
     return sorted;
   }
 
-  function renderSummary() {
+  function getCombinedPlayers() {
     const localNamed = state.players
       .filter((p) => p.name.trim() !== "")
       .map((p) => ({ name: p.name.trim(), stats: p.stats }));
@@ -670,8 +772,13 @@
     }
 
     const named = [...localNamed, ...remoteNamed];
+    return named.map((p) => ({ name: p.name, stats: p.stats, score: scoreFor(p.stats) }));
+  }
 
-    if (named.length === 0) {
+  function renderSummary() {
+    const base = getCombinedPlayers();
+
+    if (base.length === 0) {
       summaryEmptyEl.hidden = false;
       summaryContentEl.style.display = "none";
       return;
@@ -690,8 +797,6 @@
           ? `Live in game ${gameCode} — syncing with ${otherCount} other device${otherCount === 1 ? "" : "s"}.`
           : `Live in game ${gameCode} — waiting for others to join.`;
     }
-
-    const base = named.map((p) => ({ name: p.name, stats: p.stats, score: scoreFor(p.stats) }));
 
     // Score cards: always highest fantasy score first, recalculated fresh
     // every time this renders so the leaderboard order stays live.
@@ -765,6 +870,93 @@
     const div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  // ---------- Saved games ----------
+  // A "save" freezes a snapshot of the current combined summary (whatever
+  // this device can currently see, local + any synced devices) plus the
+  // game's details, so the result survives a later "Reset My Stats" or
+  // "Delete This Game". Purely a local, per-device archive — not synced.
+  const SAVED_GAMES_KEY = "footy-saved-games";
+
+  function loadSavedGames() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SAVED_GAMES_KEY) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  let savedGames = loadSavedGames();
+
+  function saveSavedGames() {
+    localStorage.setItem(SAVED_GAMES_KEY, JSON.stringify(savedGames));
+  }
+
+  const saveGameBtn = document.getElementById("save-game-btn");
+  saveGameBtn.addEventListener("click", () => {
+    const players = getCombinedPlayers();
+    if (players.length === 0) return;
+
+    const entry = {
+      id: Date.now().toString(36) + randomCode(4),
+      code: gameCode || null,
+      meta: { ...currentGameMeta },
+      savedAt: Date.now(),
+      players: sortRows(players, "score", "desc"),
+    };
+    savedGames = [entry, ...savedGames].slice(0, 50);
+    saveSavedGames();
+    renderSavedGamesList();
+    showToast("Game saved");
+  });
+
+  function deleteSavedGame(id) {
+    savedGames = savedGames.filter((g) => g.id !== id);
+    saveSavedGames();
+    renderSavedGamesList();
+  }
+
+  function renderSavedGamesList() {
+    const section = document.getElementById("setup-saved-section");
+    const wrap = document.getElementById("setup-saved-list");
+    section.hidden = savedGames.length === 0;
+    wrap.innerHTML = "";
+    if (savedGames.length === 0) return;
+    savedGames.forEach((g) => {
+      const card = document.createElement("div");
+      card.className = "saved-game-card";
+      const title = (g.meta && (g.meta.teams || g.meta.competition)) || "Untitled game";
+      const metaParts = g.meta ? [g.meta.competition, g.meta.round, g.meta.date].filter(Boolean) : [];
+      const savedAt = new Date(g.savedAt).toLocaleString();
+
+      const playersHtml = g.players
+        .map(
+          (p) =>
+            `<div class="saved-game-player"><span>${escapeHtml(p.name)}</span><span class="score">${p.score}</span></div>`
+        )
+        .join("");
+
+      card.innerHTML = `
+        <div class="saved-game-title">${escapeHtml(title)}</div>
+        ${metaParts.length ? `<div class="saved-game-meta">${escapeHtml(metaParts.join(" • "))}</div>` : ""}
+        <div class="saved-game-timestamp">Saved ${escapeHtml(savedAt)}</div>
+        <div class="saved-game-players">${playersHtml}</div>
+      `;
+
+      const del = document.createElement("button");
+      del.className = "saved-game-delete";
+      del.textContent = "✕";
+      del.setAttribute("aria-label", "Delete saved game");
+      del.addEventListener("click", () => {
+        if (!confirm(`Delete the saved record for "${title}"? This can't be undone.`)) return;
+        deleteSavedGame(g.id);
+      });
+      card.appendChild(del);
+
+      wrap.appendChild(card);
+    });
   }
 
   resetBtn.addEventListener("click", () => {
