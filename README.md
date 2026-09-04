@@ -35,15 +35,18 @@ that works offline.
   | Goal              |     +6 |
   | Behind            |     +1 |
 
-- Three tabs:
-  1. **Players** — add/remove as many players as you need. Local to this
+- Four tabs:
+  1. **Game** — create a new shared game (competition, teams, round, date —
+     generates a code) or join one (from a list of games you've used before,
+     or by typing in a code). Optional — skip it to just use the app solo.
+  2. **Players** — add/remove as many players as you need. Local to this
      device only.
-  2. **Record** — pick the active player and tap stats as they happen. Local
+  3. **Record** — pick the active player and tap stats as they happen. Local
      to this device only.
-  3. **Summary** — the only tab where other people's contributions show up
-     (see "Live sharing" below). Full stat breakdown and fantasy score for
-     every player, sortable by tapping any column, with a reset for your own
-     stats.
+  4. **Summary** — the only tab where other people's contributions show up
+     (see "Set up live sharing" below). Full stat breakdown and fantasy score
+     for every player, sortable by tapping any column, with a reset for your
+     own stats.
 - **Live sharing across phones** (optional): everyone adds and records their
   own players on their own phone as normal, and the Summary tab merges
   everyone's players into one live, shared scoreboard in real time. See
@@ -105,8 +108,11 @@ the game-code button.
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
-       match /games/{gameId}/devices/{deviceId} {
+       match /games/{gameId} {
          allow read, write: if true;
+         match /devices/{deviceId} {
+           allow read, write: if true;
+         }
        }
      }
    }
@@ -123,16 +129,19 @@ the game-code button.
 7. Commit/save `firebase-config.js` and let the site redeploy (GitHub Pages
    takes a minute or so).
 
-Once that's done, everyone can tap the **"Solo mode"** button in the top
-right of the app:
-- Leaving it blank creates a **new game code** to share with your group
-  (e.g. by text message).
-- Everyone else taps the same button and types in that code to join.
-- The button then reads **"Game: XXXXX"**, and the Summary tab shows a live,
-  combined scoreboard of everyone in that game. Players and Record stay
-  private to each device — only the Summary tab shows what others are doing.
-- Tap the button again any time to switch games or clear the code to go back
-  to solo mode.
+Once that's done, everyone uses the **Game** tab (leftmost tab) to get into
+the same shared game:
+- **Create a New Game** — fill in the competition, teams, round and date;
+  the app generates a code (e.g. `TIGR7`) and shows it to you to share with
+  your group (text message, shout it across the ground, whatever's easiest).
+- **Join an Existing Game** — either tap a game you've used before from the
+  "Games you've joined before" list, or type in a code someone gave you.
+- Once in a game, the Game tab shows a card with the match details and code,
+  and the header pill reads **"Game: XXXXX"**. The Summary tab then shows a
+  live, combined scoreboard of everyone in that game — Players and Record
+  stay private to each device; only Summary shows what others are doing.
+- **Switch Game** or **Leave — play solo** on that card takes you back to
+  create/join a different one, or drop cloud sync entirely.
 
 ## Project structure
 

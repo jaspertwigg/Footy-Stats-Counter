@@ -74,6 +74,113 @@ html, body {
 }
 .hint.subtle { margin-top: 16px; text-align: center; }
 
+/* Game Setup tab */
+.setup-choice-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  border: none;
+  background: var(--green);
+  color: #04140b;
+  font-size: 16px;
+  font-weight: 700;
+}
+.setup-choice-btn:active { background: var(--green-strong); }
+
+.setup-secondary-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.setup-secondary-btn:active { background: var(--surface); }
+
+.game-info-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+}
+.game-info-title { font-size: 20px; font-weight: 800; margin-top: 2px; }
+.game-info-meta { color: var(--text-dim); font-size: 13.5px; margin-top: 4px; }
+.game-info-code {
+  margin-top: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--green-strong);
+  letter-spacing: 0.5px;
+}
+
+.setup-form { display: flex; flex-direction: column; }
+.setup-form[hidden] { display: none; }
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 14px;
+}
+.field-label input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 14px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+}
+.field-label input:focus { outline: 2px solid var(--green); outline-offset: -1px; }
+
+.generated-code {
+  background: var(--surface);
+  border: 1px dashed var(--green);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--green-strong);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-align: center;
+}
+
+.code-input {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px 14px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.code-input:focus { outline: 2px solid var(--green); outline-offset: -1px; }
+
+.recent-games-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.recent-game-card {
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: var(--text);
+}
+.recent-game-card:active { background: var(--surface-2); }
+.recent-game-title { font-size: 16px; font-weight: 700; }
+.recent-game-meta { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; }
+.recent-game-code { color: var(--green-strong); font-size: 12.5px; font-weight: 700; margin-top: 4px; }
+
 /* Players tab */
 .player-inputs { display: flex; flex-direction: column; gap: 12px; }
 .player-row {

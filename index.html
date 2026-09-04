@@ -21,7 +21,55 @@
   <button id="game-code-btn" class="game-code-btn">Solo mode</button>
 </header>
 
-<main id="view-players" class="view active">
+<main id="view-setup" class="view active">
+  <div id="setup-current" class="game-info-card" hidden>
+    <p class="hint">Currently in</p>
+    <div class="game-info-title" id="setup-current-title"></div>
+    <div class="game-info-meta" id="setup-current-meta"></div>
+    <div class="game-info-code">Code: <span id="setup-current-code"></span></div>
+    <button id="setup-switch-btn" class="setup-choice-btn">Switch Game</button>
+    <button id="setup-leave-btn" class="setup-secondary-btn">Leave — play solo</button>
+  </div>
+
+  <div id="setup-choose">
+    <p class="hint">Play solo, or set up a game so everyone's stats show up together live.</p>
+    <button id="setup-create-btn" class="setup-choice-btn">Create a New Game</button>
+    <button id="setup-join-btn" class="setup-choice-btn">Join an Existing Game</button>
+  </div>
+
+  <div id="setup-create" class="setup-form" hidden>
+    <p class="hint">New game details</p>
+    <label class="field-label">Competition
+      <input id="setup-competition" type="text" placeholder="e.g. Under 16s Metro League" autocomplete="off" />
+    </label>
+    <label class="field-label">Teams
+      <input id="setup-teams" type="text" placeholder="e.g. Tigers vs Lions" autocomplete="off" />
+    </label>
+    <label class="field-label">Round
+      <input id="setup-round" type="text" placeholder="e.g. Round 14" autocomplete="off" />
+    </label>
+    <label class="field-label">Date
+      <input id="setup-date" type="date" />
+    </label>
+    <div class="field-label">
+      Game Code
+      <div class="generated-code" id="setup-generated-code">-----</div>
+    </div>
+    <button id="setup-create-submit" class="setup-choice-btn">Create Game</button>
+    <button id="setup-create-cancel" class="setup-secondary-btn">Cancel</button>
+  </div>
+
+  <div id="setup-join" class="setup-form" hidden>
+    <p class="hint">Games you've joined before</p>
+    <div id="setup-recent-list" class="recent-games-list"></div>
+    <p class="hint">Or enter a code someone gave you</p>
+    <input id="setup-join-code" type="text" placeholder="e.g. TIGR7" class="code-input" autocapitalize="characters" autocomplete="off" />
+    <button id="setup-join-submit" class="setup-choice-btn">Join Game</button>
+    <button id="setup-join-cancel" class="setup-secondary-btn">Cancel</button>
+  </div>
+</main>
+
+<main id="view-players" class="view">
   <p class="hint">Add your players before the game.</p>
   <div id="player-inputs" class="player-inputs"></div>
   <button id="add-player-btn" class="add-player-btn">+ Add Player</button>
@@ -62,7 +110,10 @@
 </main>
 
 <nav class="tab-bar">
-  <button class="tab-btn active" data-tab="players">
+  <button class="tab-btn active" data-tab="setup">
+    <span class="tab-icon">🏟️</span><span>Game</span>
+  </button>
+  <button class="tab-btn" data-tab="players">
     <span class="tab-icon">📝</span><span>Players</span>
   </button>
   <button class="tab-btn" data-tab="record">

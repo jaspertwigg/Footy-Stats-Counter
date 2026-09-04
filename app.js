@@ -116,17 +116,21 @@
     if (!db || !gameCode) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => {
-      db.collection("games")
-        .doc(gameCode)
-        .collection("devices")
-        .doc(DEVICE_ID)
-        .set({
-          players: state.players
-            .filter((p) => p.name.trim() !== "")
-            .map((p) => ({ name: p.name.trim(), stats: p.stats })),
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        })
-        .catch((e) => console.warn("Cloud sync push failed:", e));
+      try {
+        db.collection("games")
+          .doc(gameCode)
+          .collection("devices")
+          .doc(DEVICE_ID)
+          .set({
+            players: state.players
+              .filter((p) => p.name.trim() !== "")
+              .map((p) => ({ name: p.name.trim(), stats: p.stats })),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          })
+          .catch((e) => console.warn("Cloud sync push failed:", e));
+      } catch (e) {
+        console.warn("Cloud sync push failed:", e);
+      }
     }, 300);
   }
 
@@ -140,22 +144,27 @@
       renderSummary();
       return;
     }
-    unsubscribeDevices = db
-      .collection("games")
-      .doc(gameCode)
-      .collection("devices")
-      .onSnapshot(
-        (snap) => {
-          remoteDevices = {};
-          snap.forEach((doc) => {
-            if (doc.id === DEVICE_ID) return; // our own data is read straight from local state
-            const data = doc.data();
-            remoteDevices[doc.id] = (data && data.players) || [];
-          });
-          renderSummary();
-        },
-        (e) => console.warn("Cloud sync listen failed:", e)
-      );
+    try {
+      unsubscribeDevices = db
+        .collection("games")
+        .doc(gameCode)
+        .collection("devices")
+        .onSnapshot(
+          (snap) => {
+            remoteDevices = {};
+            snap.forEach((doc) => {
+              if (doc.id === DEVICE_ID) return; // our own data is read straight from local state
+              const data = doc.data();
+              remoteDevices[doc.id] = (data && data.players) || [];
+            });
+            renderSummary();
+          },
+          (e) => console.warn("Cloud sync listen failed:", e)
+        );
+    } catch (e) {
+      console.warn("Cloud sync listen failed:", e);
+      renderSummary();
+    }
   }
 
   const gameCodeBtn = document.getElementById("game-code-btn");
@@ -164,48 +173,243 @@
     gameCodeBtn.textContent = gameCode ? `Game: ${gameCode}` : "Solo mode";
   }
 
-  gameCodeBtn.addEventListener("click", () => {
-    if (!db) {
-      alert(
-        'Cloud sync isn\'t set up yet. See the "Set up live sharing" section of README.md to connect a free Firebase project.'
-      );
-      return;
-    }
+  gameCodeBtn.addEventListener("click", () => switchTab("setup"));
 
-    const hadCode = !!gameCode;
+  // ---------- Game Setup tab ----------
+  // Game metadata (competition/teams/round/date) is stored on the parent
+  // games/{code} document, separately from the per-device players/stats
+  // documents in its devices subcollection. Each device also keeps a local
+  // "recent games" list so it can quickly rejoin a game it's used before
+  // without needing to remember or re-fetch the code's details.
+  const RECENT_GAMES_KEY = "footy-recent-games";
+
+  function loadRecentGames() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RECENT_GAMES_KEY) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  let recentGames = loadRecentGames();
+
+  function findRecentGame(code) {
+    return recentGames.find((g) => g.code === code);
+  }
+
+  function addRecentGame(entry) {
+    recentGames = [entry, ...recentGames.filter((g) => g.code !== entry.code)].slice(0, 12);
+    localStorage.setItem(RECENT_GAMES_KEY, JSON.stringify(recentGames));
+  }
+
+  let currentGameMeta = gameCode ? findRecentGame(gameCode) || {} : {};
+
+  function joinGame(code, meta) {
     const oldCode = gameCode;
-    const message = hadCode
-      ? `Currently in game "${gameCode}". Enter a different code to switch, clear the text to go solo, or Cancel to stay as you are.`
-      : "Enter a game code to join your team's shared game, or leave this blank to create a new one.";
-    const input = prompt(message, gameCode);
-    if (input === null) return; // cancelled, no change
+    gameCode = code;
+    currentGameMeta = meta || {};
+    localStorage.setItem(GAME_CODE_KEY, gameCode);
+    addRecentGame({ code, ...currentGameMeta });
 
-    const code = sanitizeGameCode(input);
-    if (!code) {
-      if (hadCode) {
-        gameCode = "";
-        localStorage.removeItem(GAME_CODE_KEY);
-      } else {
-        gameCode = randomCode(5);
-        localStorage.setItem(GAME_CODE_KEY, gameCode);
-        alert(`Your new game code is ${gameCode}. Share it with your team so they can join the same live scoreboard.`);
-      }
-    } else {
-      gameCode = code;
-      localStorage.setItem(GAME_CODE_KEY, gameCode);
-    }
-
-    if (hadCode && oldCode !== gameCode) {
+    if (oldCode && oldCode !== gameCode && db) {
       db.collection("games").doc(oldCode).collection("devices").doc(DEVICE_ID).delete().catch(() => {});
     }
 
     updateGameCodeBtn();
     pushToCloud();
     subscribeToGame();
+    setupView = "current";
+    renderSetupTab();
+  }
+
+  function leaveGame() {
+    const oldCode = gameCode;
+    gameCode = "";
+    currentGameMeta = {};
+    localStorage.removeItem(GAME_CODE_KEY);
+    if (oldCode && db) {
+      db.collection("games").doc(oldCode).collection("devices").doc(DEVICE_ID).delete().catch(() => {});
+    }
+    updateGameCodeBtn();
+    subscribeToGame();
+    setupView = "choose";
+    renderSetupTab();
+  }
+
+  const setupCurrentEl = document.getElementById("setup-current");
+  const setupChooseEl = document.getElementById("setup-choose");
+  const setupCreateEl = document.getElementById("setup-create");
+  const setupJoinEl = document.getElementById("setup-join");
+
+  let setupView = gameCode ? "current" : "choose"; // "current" | "choose" | "create" | "join"
+  let setupGeneratedCode = "";
+
+  function renderSetupTab() {
+    setupCurrentEl.hidden = setupView !== "current";
+    setupChooseEl.hidden = setupView !== "choose";
+    setupCreateEl.hidden = setupView !== "create";
+    setupJoinEl.hidden = setupView !== "join";
+
+    if (setupView === "current") {
+      const title = currentGameMeta.teams || currentGameMeta.competition || "Untitled game";
+      const metaParts = [currentGameMeta.competition, currentGameMeta.round, currentGameMeta.date].filter(Boolean);
+      document.getElementById("setup-current-title").textContent = title;
+      document.getElementById("setup-current-meta").textContent = metaParts.join(" • ");
+      document.getElementById("setup-current-code").textContent = gameCode;
+    }
+
+    if (setupView === "join") {
+      renderRecentGamesList();
+    }
+  }
+
+  function renderRecentGamesList() {
+    const wrap = document.getElementById("setup-recent-list");
+    wrap.innerHTML = "";
+    if (recentGames.length === 0) {
+      const p = document.createElement("p");
+      p.className = "hint subtle";
+      p.textContent = "No games yet.";
+      wrap.appendChild(p);
+      return;
+    }
+    recentGames.forEach((g) => {
+      const card = document.createElement("button");
+      card.className = "recent-game-card";
+      const title = g.teams || g.competition || "Untitled game";
+      const metaParts = [g.competition, g.round, g.date].filter(Boolean);
+      card.innerHTML = `
+        <div class="recent-game-title">${escapeHtml(title)}</div>
+        ${metaParts.length ? `<div class="recent-game-meta">${escapeHtml(metaParts.join(" • "))}</div>` : ""}
+        <div class="recent-game-code">Code: ${escapeHtml(g.code)}</div>
+      `;
+      card.addEventListener("click", () => {
+        joinGame(g.code, g);
+        switchTab("players");
+      });
+      wrap.appendChild(card);
+    });
+  }
+
+  document.getElementById("setup-switch-btn").addEventListener("click", () => {
+    setupView = "choose";
+    renderSetupTab();
+  });
+
+  document.getElementById("setup-leave-btn").addEventListener("click", () => {
+    if (!confirm("Leave this game and go back to solo mode? Your own players and stats are kept.")) return;
+    leaveGame();
+  });
+
+  document.getElementById("setup-create-btn").addEventListener("click", () => {
+    if (!db) {
+      alert(
+        'Cloud sync isn\'t set up yet. See the "Set up live sharing" section of README.md to connect a free Firebase project.'
+      );
+      return;
+    }
+    setupGeneratedCode = randomCode(5);
+    document.getElementById("setup-generated-code").textContent = setupGeneratedCode;
+    document.getElementById("setup-competition").value = "";
+    document.getElementById("setup-teams").value = "";
+    document.getElementById("setup-round").value = "";
+    document.getElementById("setup-date").value = new Date().toISOString().slice(0, 10);
+    setupView = "create";
+    renderSetupTab();
+  });
+
+  document.getElementById("setup-create-cancel").addEventListener("click", () => {
+    setupView = gameCode ? "current" : "choose";
+    renderSetupTab();
+  });
+
+  document.getElementById("setup-create-submit").addEventListener("click", () => {
+    const meta = {
+      competition: document.getElementById("setup-competition").value.trim(),
+      teams: document.getElementById("setup-teams").value.trim(),
+      round: document.getElementById("setup-round").value.trim(),
+      date: document.getElementById("setup-date").value,
+    };
+    const code = setupGeneratedCode;
+
+    if (db) {
+      try {
+        db.collection("games")
+          .doc(code)
+          .set({ ...meta, createdAt: firebase.firestore.FieldValue.serverTimestamp() })
+          .catch((e) => console.warn("Failed to save game details:", e));
+      } catch (e) {
+        console.warn("Failed to save game details:", e);
+      }
+    }
+
+    joinGame(code, meta);
+    switchTab("players");
+  });
+
+  document.getElementById("setup-join-btn").addEventListener("click", () => {
+    if (!db) {
+      alert(
+        'Cloud sync isn\'t set up yet. See the "Set up live sharing" section of README.md to connect a free Firebase project.'
+      );
+      return;
+    }
+    document.getElementById("setup-join-code").value = "";
+    setupView = "join";
+    renderSetupTab();
+  });
+
+  document.getElementById("setup-join-cancel").addEventListener("click", () => {
+    setupView = gameCode ? "current" : "choose";
+    renderSetupTab();
+  });
+
+  document.getElementById("setup-join-submit").addEventListener("click", () => {
+    const code = sanitizeGameCode(document.getElementById("setup-join-code").value);
+    if (!code) return;
+
+    const known = findRecentGame(code);
+    if (known) {
+      joinGame(code, known);
+      switchTab("players");
+      return;
+    }
+
+    if (!db) {
+      joinGame(code, {});
+      switchTab("players");
+      return;
+    }
+
+    try {
+      db.collection("games")
+        .doc(code)
+        .get()
+        .then((doc) => {
+          const data = doc.exists ? doc.data() : {};
+          joinGame(code, {
+            competition: data.competition || "",
+            teams: data.teams || "",
+            round: data.round || "",
+            date: data.date || "",
+          });
+          switchTab("players");
+        })
+        .catch(() => {
+          joinGame(code, {});
+          switchTab("players");
+        });
+    } catch (e) {
+      console.warn("Failed to look up game details:", e);
+      joinGame(code, {});
+      switchTab("players");
+    }
   });
 
   // ---------- Tab switching ----------
   const views = {
+    setup: document.getElementById("view-setup"),
     players: document.getElementById("view-players"),
     record: document.getElementById("view-record"),
     summary: document.getElementById("view-summary"),
@@ -219,6 +423,7 @@
     for (const btn of tabButtons) {
       btn.classList.toggle("active", btn.dataset.tab === tab);
     }
+    if (tab === "setup") renderSetupTab();
     if (tab === "record") renderRecord();
     if (tab === "summary") renderSummary();
   }
@@ -587,6 +792,7 @@
 
   // ---------- Init ----------
   updateGameCodeBtn();
+  renderSetupTab();
   renderPlayerInputs();
   renderRecord();
   renderSummary();
