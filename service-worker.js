@@ -1,4 +1,4 @@
-const CACHE = "footy-stats-v1";
+const CACHE = "footy-stats-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -25,19 +25,19 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Network-first: always try to fetch the latest version when online, and
+// only fall back to the cached copy when the network request fails (e.g.
+// no signal at the ground). This ensures pushed updates show up on the
+// next load instead of being stuck behind whatever was cached first.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(
-    caches.match(event.request).then(
-      (cached) =>
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-            return response;
-          })
-          .catch(() => cached)
-    )
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
