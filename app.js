@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "footy-stats-counter-v1";
+  const GAME_CODE_KEY = "footy-game-code";
 
   // AFL Fantasy (Classic) scoring values.
   // Intercept Marks increment the Marks tally (handled at record time) but
@@ -27,26 +28,55 @@
     return s;
   }
 
+  function normalizePlayers(rawPlayers) {
+    return Array.isArray(rawPlayers)
+      ? rawPlayers.map((p) => ({
+          name: typeof (p && p.name) === "string" ? p.name : "",
+          stats: Object.assign(emptyStats(), (p && p.stats) || {}),
+        }))
+      : [];
+  }
+
+  // Player rosters and stats belong to a specific game (state.gamesData is
+  // keyed by game code) so that deleting a game erases its players/stats
+  // too, and having no active game shows no data at all.
+  let gameCode = localStorage.getItem(GAME_CODE_KEY) || "";
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.players)) {
-          const players = parsed.players.map((p) => ({
-            name: typeof p.name === "string" ? p.name : "",
-            stats: Object.assign(emptyStats(), (p && p.stats) || {}),
-          }));
-          return { players, activePlayer: null, history: [] };
+        if (parsed && typeof parsed === "object") {
+          const gamesData = {};
+          if (parsed.gamesData && typeof parsed.gamesData === "object") {
+            for (const code of Object.keys(parsed.gamesData)) {
+              gamesData[code] = { players: normalizePlayers(parsed.gamesData[code] && parsed.gamesData[code].players) };
+            }
+          } else if (Array.isArray(parsed.players) && gameCode) {
+            // Migrating from the old single-roster format: only keep it if
+            // it can be attached to the game this device was last in —
+            // otherwise there's no game left for it to belong to.
+            gamesData[gameCode] = { players: normalizePlayers(parsed.players) };
+          }
+          return { gamesData, activePlayer: null, history: [] };
         }
       }
     } catch (e) {
       /* corrupt storage, fall through to fresh state */
     }
-    return { players: [], activePlayer: null, history: [] };
+    return { gamesData: {}, activePlayer: null, history: [] };
   }
 
   const state = loadState();
+
+  function currentPlayers() {
+    if (!gameCode) return [];
+    if (!state.gamesData[gameCode]) {
+      state.gamesData[gameCode] = { players: [] };
+    }
+    return state.gamesData[gameCode].players;
+  }
 
   function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -67,7 +97,6 @@
   // edited by multiple devices at once, so there's nothing to merge-conflict.
   // The Summary tab is the only place that reads other devices' documents
   // and combines them into one live view; Players and Record stay local.
-  const GAME_CODE_KEY = "footy-game-code";
   const DEVICE_ID_KEY = "footy-device-id";
   const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L, easy to read aloud
 
@@ -89,7 +118,6 @@
   }
   const DEVICE_ID = getDeviceId();
 
-  let gameCode = localStorage.getItem(GAME_CODE_KEY) || "";
   let db = null;
   let unsubscribeDevices = null;
   let remoteDevices = {}; // deviceId -> that device's named players, from the last snapshot
@@ -122,7 +150,7 @@
           .collection("devices")
           .doc(DEVICE_ID)
           .set({
-            players: state.players
+            players: currentPlayers()
               .filter((p) => p.name.trim() !== "")
               .map((p) => ({ name: p.name.trim(), stats: p.stats })),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -216,8 +244,14 @@
       db.collection("games").doc(oldCode).collection("devices").doc(DEVICE_ID).delete().catch(() => {});
     }
 
+    // Switching which game is active switches which player roster is in
+    // view, so any in-progress selection/undo history from the old game
+    // no longer makes sense against the new one.
+    state.activePlayer = null;
+    state.history = [];
+
     updateGameCodeBtn();
-    pushToCloud();
+    saveState();
     subscribeToGame();
     setupView = "current";
     renderSetupTab();
@@ -231,19 +265,25 @@
     if (oldCode && db) {
       db.collection("games").doc(oldCode).collection("devices").doc(DEVICE_ID).delete().catch(() => {});
     }
+    state.activePlayer = null;
+    state.history = [];
     updateGameCodeBtn();
+    saveState();
     subscribeToGame();
     setupView = "choose";
     renderSetupTab();
   }
 
-  // Deleting a game removes it everywhere: this device's local history, and
-  // (when cloud sync is on) the shared games/{code} document plus everyone's
-  // per-device documents under it. There's no login system protecting a
-  // game code, so this is a real delete, not just "hide it from me."
+  // Deleting a game removes it everywhere: this device's local history and
+  // its attached player roster/stats, and (when cloud sync is on) the
+  // shared games/{code} document plus everyone's per-device documents under
+  // it. There's no login system protecting a game code, so this is a real
+  // delete, not just "hide it from me."
   function deleteGame(code) {
     recentGames = recentGames.filter((g) => g.code !== code);
     localStorage.setItem(RECENT_GAMES_KEY, JSON.stringify(recentGames));
+
+    delete state.gamesData[code];
 
     if (db) {
       try {
@@ -266,10 +306,13 @@
       gameCode = "";
       currentGameMeta = {};
       localStorage.removeItem(GAME_CODE_KEY);
+      state.activePlayer = null;
+      state.history = [];
       updateGameCodeBtn();
       subscribeToGame();
       setupView = "choose";
     }
+    saveState();
     renderSetupTab();
   }
 
@@ -526,6 +569,7 @@
       btn.classList.toggle("active", btn.dataset.tab === tab);
     }
     if (tab === "setup") renderSetupTab();
+    if (tab === "players") renderPlayerInputs();
     if (tab === "record") renderRecord();
     if (tab === "summary") renderSummary();
   }
@@ -535,20 +579,30 @@
   }
 
   // ---------- Players tab ----------
+  const playersNoGameEl = document.getElementById("players-no-game");
+  const playersContentEl = document.getElementById("players-content");
   const playerInputsEl = document.getElementById("player-inputs");
   const addPlayerBtn = document.getElementById("add-player-btn");
 
   function renderPlayerInputs() {
+    if (!gameCode) {
+      playersNoGameEl.hidden = false;
+      playersContentEl.style.display = "none";
+      return;
+    }
+    playersNoGameEl.hidden = true;
+    playersContentEl.style.display = "block";
+
     playerInputsEl.innerHTML = "";
 
-    if (state.players.length === 0) {
+    if (currentPlayers().length === 0) {
       const empty = document.createElement("p");
       empty.className = "hint subtle";
       empty.textContent = "No players yet — tap Add Player to get started.";
       playerInputsEl.appendChild(empty);
     }
 
-    state.players.forEach((p, idx) => {
+    currentPlayers().forEach((p, idx) => {
       const row = document.createElement("div");
       row.className = "player-row";
 
@@ -564,7 +618,7 @@
       input.autocomplete = "off";
       input.enterKeyHint = "done";
       input.addEventListener("input", () => {
-        state.players[idx].name = input.value;
+        currentPlayers()[idx].name = input.value;
         saveState();
       });
 
@@ -573,7 +627,7 @@
       removeBtn.textContent = "✕";
       removeBtn.setAttribute("aria-label", "Remove player");
       removeBtn.addEventListener("click", () => {
-        state.players.splice(idx, 1);
+        currentPlayers().splice(idx, 1);
         state.activePlayer = null;
         state.history = [];
         saveState();
@@ -589,7 +643,7 @@
   }
 
   addPlayerBtn.addEventListener("click", () => {
-    state.players.push({ name: "", stats: emptyStats() });
+    currentPlayers().push({ name: "", stats: emptyStats() });
     saveState();
     renderPlayerInputs();
     const inputs = playerInputsEl.querySelectorAll(".player-row input");
@@ -606,18 +660,21 @@
 
   function ensureActivePlayerValid() {
     if (state.activePlayer === null) return;
-    const p = state.players[state.activePlayer];
+    const p = currentPlayers()[state.activePlayer];
     if (!p || p.name.trim() === "") {
       state.activePlayer = null;
     }
   }
 
   function renderRecord() {
-    const named = state.players
+    const named = currentPlayers()
       .map((p, idx) => ({ ...p, idx }))
       .filter((p) => p.name.trim() !== "");
 
     if (named.length === 0) {
+      recordEmptyEl.innerHTML = !gameCode
+        ? "<p>Join or create a game on the <strong>Game</strong> tab to start recording stats.</p>"
+        : "<p>Add at least one player on the <strong>Players</strong> tab to start recording stats.</p>";
       recordEmptyEl.hidden = false;
       recordContentEl.style.display = "none";
       return;
@@ -639,7 +696,7 @@
       playerSelectorEl.appendChild(chip);
     });
 
-    const active = state.activePlayer === null ? null : state.players[state.activePlayer];
+    const active = state.activePlayer === null ? null : currentPlayers()[state.activePlayer];
 
     renderStatGrid();
     statGridEl.classList.toggle("disabled", !active);
@@ -675,7 +732,7 @@
   }
 
   function incrementStat(key, btnEl) {
-    const player = state.players[state.activePlayer];
+    const player = currentPlayers()[state.activePlayer];
     const def = STAT_DEFS.find((d) => d.key === key);
     player.stats[key] = (player.stats[key] || 0) + 1;
     if (def.addsToMarks) {
@@ -698,7 +755,7 @@
   }
 
   function decrementStat(key) {
-    const player = state.players[state.activePlayer];
+    const player = currentPlayers()[state.activePlayer];
     if ((player.stats[key] || 0) <= 0) return;
     const def = STAT_DEFS.find((d) => d.key === key);
     player.stats[key] -= 1;
@@ -713,7 +770,7 @@
   undoBtn.addEventListener("click", () => {
     const last = state.history.pop();
     if (!last) return;
-    const player = state.players[last.playerIdx];
+    const player = currentPlayers()[last.playerIdx];
     const def = STAT_DEFS.find((d) => d.key === last.key);
     if (player.stats[last.key] > 0) player.stats[last.key] -= 1;
     if (last.addsToMarks && player.stats.marks > 0) player.stats.marks -= 1;
@@ -758,7 +815,7 @@
   }
 
   function getCombinedPlayers() {
-    const localNamed = state.players
+    const localNamed = currentPlayers()
       .filter((p) => p.name.trim() !== "")
       .map((p) => ({ name: p.name.trim(), stats: p.stats }));
 
@@ -779,6 +836,9 @@
     const base = getCombinedPlayers();
 
     if (base.length === 0) {
+      summaryEmptyEl.innerHTML = !gameCode
+        ? "<p>Join or create a game on the <strong>Game</strong> tab to see a summary here.</p>"
+        : "<p>Add players and record some stats to see the summary here.</p>";
       summaryEmptyEl.hidden = false;
       summaryContentEl.style.display = "none";
       return;
@@ -786,9 +846,7 @@
     summaryEmptyEl.hidden = true;
     summaryContentEl.style.display = "block";
 
-    if (!gameCode) {
-      summarySyncStatusEl.textContent = "Solo mode — showing only your own players.";
-    } else if (!db) {
+    if (!db) {
       summarySyncStatusEl.textContent = `Game ${gameCode} — cloud sync unavailable right now.`;
     } else {
       const otherCount = Object.keys(remoteDevices).length;
@@ -961,7 +1019,7 @@
 
   resetBtn.addEventListener("click", () => {
     if (!confirm("Reset your recorded stats for this game? Player names are kept. This only affects your own players, not anyone else sharing this game.")) return;
-    for (const p of state.players) p.stats = emptyStats();
+    for (const p of currentPlayers()) p.stats = emptyStats();
     state.history = [];
     saveState();
     renderSummary();

@@ -7,8 +7,13 @@ that works offline.
 
 ## Features
 
-- Each device tracks its **own roster of players** — tap **+ Add Player** to
-  add as many as you need (starts empty), with a remove button on each row.
+- Players and their stats **belong to whichever game you're currently in** —
+  each game has its own separate roster, tap **+ Add Player** to add as many
+  as you need (starts empty), with a remove button on each row. Switching to
+  a different game swaps in that game's own players; deleting a game erases
+  its players and stats along with it. With no game created or joined,
+  Players/Record/Summary show nothing until you set one up on the **Game**
+  tab.
 - Record: **Goals, Behinds, Kicks, Handballs, Marks, Intercept Marks, Free
   Kicks For, Free Kicks Against, Tackles, Hitouts**.
   - Intercept Marks add to the Marks tally (but Marks don't add to Intercept
@@ -36,17 +41,19 @@ that works offline.
   | Behind            |     +1 |
 
 - Four tabs:
-  1. **Game** — create a new shared game (competition, teams, round, date —
+  1. **Game** — create a new game (competition, teams, round, date —
      generates a code) or join one (from a list of games you've used before,
-     or by typing in a code). Optional — skip it to just use the app solo.
-     The current game's card has **Edit Details**, **Switch Game**, **Leave
-     — play solo**, and **Delete This Game** (a real delete — it removes the
-     game for everyone sharing that code, not just you). Games in the
-     "joined before" list can also be deleted individually.
-  2. **Players** — add/remove as many players as you need. Local to this
-     device only.
-  3. **Record** — pick the active player and tap stats as they happen. Local
-     to this device only.
+     or by typing in a code). You need a game to do anything on the other
+     three tabs — this is where you make or pick one. The current game's
+     card has **Edit Details**, **Switch Game**, **Leave — play solo**, and
+     **Delete This Game** (a real delete — it erases the game's players and
+     stats too, and removes it for everyone sharing that code, not just
+     you). Games in the "joined before" list can also be deleted
+     individually.
+  2. **Players** — add/remove players for whichever game is currently
+     active. Each game has its own roster.
+  3. **Record** — pick the active player and tap stats as they happen, for
+     the current game's players.
   4. **Summary** — the only tab where other people's contributions show up
      (see "Set up live sharing" below). Full stat breakdown and fantasy score
      for every player, sortable by tapping any column, with a reset for your
@@ -58,12 +65,15 @@ that works offline.
 - **Live sharing across phones** (optional): everyone adds and records their
   own players on their own phone as normal, and the Summary tab merges
   everyone's players into one live, shared scoreboard in real time. See
-  "Set up live sharing" below — this needs a one-time, free setup step.
+  "Set up live sharing" below — this needs a one-time, free setup step. A
+  game still works perfectly well with sharing never set up; it just stays
+  visible only on your own device.
 - Works fully offline once installed (service worker caches all assets), and
   everything is saved to the device automatically — nothing is lost if you
-  background the app or lose signal at the ground. Live sharing is optional
-  on top of that: with no game code set, the app runs exactly as a
-  single-device tool.
+  background the app or lose signal at the ground. Live sharing itself is
+  optional and works offline-first too (falls back to local-only if there's
+  no signal); what every game always needs, sharing or not, is to actually
+  create or join one on the Game tab first.
 
 ## Install on iPhone
 

@@ -77,10 +77,15 @@
 </main>
 
 <main id="view-players" class="view">
-  <p class="hint">Add your players before the game.</p>
-  <div id="player-inputs" class="player-inputs"></div>
-  <button id="add-player-btn" class="add-player-btn">+ Add Player</button>
-  <p class="hint subtle">Names save automatically.</p>
+  <div id="players-no-game" class="empty-state" hidden>
+    <p>Join or create a game on the <strong>Game</strong> tab to add players.</p>
+  </div>
+  <div id="players-content">
+    <p class="hint">Add your players before the game.</p>
+    <div id="player-inputs" class="player-inputs"></div>
+    <button id="add-player-btn" class="add-player-btn">+ Add Player</button>
+    <p class="hint subtle">Names save automatically.</p>
+  </div>
 </main>
 
 <main id="view-record" class="view">
