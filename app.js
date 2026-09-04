@@ -2,7 +2,6 @@
   "use strict";
 
   const STORAGE_KEY = "footy-stats-counter-v1";
-  const MAX_PLAYERS = 5;
 
   // AFL Fantasy (Classic) scoring values.
   // Intercept Marks increment the Marks tally (handled at record time) but
@@ -34,7 +33,7 @@
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.players)) {
-          const players = parsed.players.slice(0, MAX_PLAYERS).map((p) => ({
+          const players = parsed.players.map((p) => ({
             name: typeof p.name === "string" ? p.name : "",
             stats: Object.assign(emptyStats(), (p && p.stats) || {}),
           }));
@@ -280,13 +279,9 @@
       playerInputsEl.appendChild(row);
     });
 
-    const full = state.players.length >= MAX_PLAYERS;
-    addPlayerBtn.disabled = full;
-    addPlayerBtn.textContent = full ? "Maximum 5 players" : "+ Add Player";
   }
 
   addPlayerBtn.addEventListener("click", () => {
-    if (state.players.length >= MAX_PLAYERS) return;
     state.players.push({ name: "", stats: emptyStats() });
     saveState();
     renderPlayerInputs();

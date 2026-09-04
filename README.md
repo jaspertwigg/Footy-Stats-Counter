@@ -7,9 +7,8 @@ that works offline.
 
 ## Features
 
-- Each device tracks its **own roster of up to 5 players** — tap **+ Add
-  Player** to add one at a time (starts empty), with a remove button on each
-  row.
+- Each device tracks its **own roster of players** — tap **+ Add Player** to
+  add as many as you need (starts empty), with a remove button on each row.
 - Record: **Goals, Behinds, Kicks, Handballs, Marks, Intercept Marks, Free
   Kicks For, Free Kicks Against, Tackles, Hitouts**.
   - Intercept Marks add to the Marks tally (but Marks don't add to Intercept
@@ -37,7 +36,8 @@ that works offline.
   | Behind            |     +1 |
 
 - Three tabs:
-  1. **Players** — add/remove up to 5 players. Local to this device only.
+  1. **Players** — add/remove as many players as you need. Local to this
+     device only.
   2. **Record** — pick the active player and tap stats as they happen. Local
      to this device only.
   3. **Summary** — the only tab where other people's contributions show up
