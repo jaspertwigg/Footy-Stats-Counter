@@ -827,8 +827,8 @@
 
   const TABLE_COLUMNS = [
     { key: "name", label: "Player" },
+    { key: "score", label: "AF" },
     ...STAT_DEFS.map((d) => ({ key: d.key, label: abbrev(d) })),
-    { key: "score", label: "Fantasy Pts" },
   ];
 
   function sortRows(rows, key, dir) {
@@ -934,9 +934,9 @@
 
     tbody.innerHTML = tableRows
       .map(
-        (p) => `<tr><td>${escapeHtml(p.name)}</td>${STAT_DEFS.map(
+        (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="score-cell">${p.score}</td>${STAT_DEFS.map(
           (d) => `<td>${p.stats[d.key] || 0}</td>`
-        ).join("")}<td class="score-cell">${p.score}</td></tr>`
+        ).join("")}</tr>`
       )
       .join("");
   }
