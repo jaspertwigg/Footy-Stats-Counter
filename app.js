@@ -33,6 +33,10 @@
       ? rawPlayers.map((p) => ({
           name: typeof (p && p.name) === "string" ? p.name : "",
           stats: Object.assign(emptyStats(), (p && p.stats) || {}),
+          // Archived players are removed from Players/Record but keep their
+          // stats visible on Summary — "remove" is a soft delete, not a
+          // hard one, so a player's contribution to the game isn't lost.
+          archived: !!(p && p.archived),
         }))
       : [];
   }
@@ -628,24 +632,30 @@
 
     playerInputsEl.innerHTML = "";
 
-    if (currentPlayers().length === 0) {
+    // Archived (removed) players are hidden here and in Record, but keep
+    // showing on Summary — "remove" only takes them out of active play.
+    const visible = currentPlayers()
+      .map((p, idx) => ({ p, idx }))
+      .filter((e) => !e.p.archived);
+
+    if (visible.length === 0) {
       const empty = document.createElement("p");
       empty.className = "hint subtle";
       empty.textContent = "No players yet — tap Add Player to get started.";
       playerInputsEl.appendChild(empty);
     }
 
-    currentPlayers().forEach((p, idx) => {
+    visible.forEach(({ p, idx }, displayIdx) => {
       const row = document.createElement("div");
       row.className = "player-row";
 
       const num = document.createElement("div");
       num.className = "num";
-      num.textContent = String(idx + 1);
+      num.textContent = String(displayIdx + 1);
 
       const input = document.createElement("input");
       input.type = "text";
-      input.placeholder = `Player ${idx + 1} name`;
+      input.placeholder = `Player ${displayIdx + 1} name`;
       input.value = p.name;
       input.autocapitalize = "words";
       input.autocomplete = "off";
@@ -660,9 +670,8 @@
       removeBtn.textContent = "✕";
       removeBtn.setAttribute("aria-label", "Remove player");
       removeBtn.addEventListener("click", () => {
-        currentPlayers().splice(idx, 1);
+        currentPlayers()[idx].archived = true;
         state.activePlayer = null;
-        state.history = [];
         saveState();
         renderPlayerInputs();
       });
@@ -676,7 +685,7 @@
   }
 
   addPlayerBtn.addEventListener("click", () => {
-    currentPlayers().push({ name: "", stats: emptyStats() });
+    currentPlayers().push({ name: "", stats: emptyStats(), archived: false });
     saveState();
     renderPlayerInputs();
     const inputs = playerInputsEl.querySelectorAll(".player-row input");
@@ -694,7 +703,7 @@
   function ensureActivePlayerValid() {
     if (state.activePlayer === null) return;
     const p = currentPlayers()[state.activePlayer];
-    if (!p || p.name.trim() === "") {
+    if (!p || p.archived || p.name.trim() === "") {
       state.activePlayer = null;
     }
   }
@@ -702,7 +711,7 @@
   function renderRecord() {
     const named = currentPlayers()
       .map((p, idx) => ({ ...p, idx }))
-      .filter((p) => p.name.trim() !== "");
+      .filter((p) => !p.archived && p.name.trim() !== "");
 
     if (named.length === 0) {
       recordEmptyEl.innerHTML = !gameCode

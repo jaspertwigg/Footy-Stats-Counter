@@ -19,6 +19,10 @@ browser doesn't support sharing.
   its players and stats along with it. With no game created or joined,
   Players/Record/Summary show nothing until you set one up on the **Game**
   tab.
+  - Removing a player from the Players tab only takes them out of active
+    play (they disappear from Players and Record) — it does **not** erase
+    their recorded stats from Summary. A player who's had to leave partway
+    through still keeps their spot on the scoreboard.
 - Record: **Goals, Behinds, Kicks, Handballs, Marks, Intercept Marks, Free
   Kicks For, Free Kicks Against, Tackles, Hitouts**.
   - Intercept Marks add to the Marks tally (but Marks don't add to Intercept
