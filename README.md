@@ -23,6 +23,9 @@ browser doesn't support sharing.
     play (they disappear from Players and Record) — it does **not** erase
     their recorded stats from Summary. A player who's had to leave partway
     through still keeps their spot on the scoreboard.
+  - Typing that same name into a new player row reunites it with their old
+    record (restoring their existing stats) instead of creating a second,
+    duplicate entry on Summary.
 - Record: **Goals, Behinds, Kicks, Handballs, Marks, Intercept Marks, Free
   Kicks For, Free Kicks Against, Tackles, Hitouts**.
   - Intercept Marks add to the Marks tally (but Marks don't add to Intercept

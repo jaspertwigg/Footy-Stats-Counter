@@ -621,6 +621,34 @@
   const playerInputsEl = document.getElementById("player-inputs");
   const addPlayerBtn = document.getElementById("add-player-btn");
 
+  // If a name is typed that matches an archived (removed) player, reunite
+  // with that player's existing record instead of leaving two entries with
+  // the same name on Summary — one live, one archived. The row just edited
+  // is archived in its place rather than deleted outright, so no other
+  // player's array index shifts (that would corrupt undo history/active
+  // player references, which point at positions in this same array).
+  function mergeWithArchivedDuplicate(idx) {
+    const players = currentPlayers();
+    const current = players[idx];
+    if (!current || current.archived) return;
+    const name = current.name.trim();
+    if (!name) return;
+
+    const matchIdx = players.findIndex(
+      (p, i) => i !== idx && p.archived && p.name.trim().toLowerCase() === name.toLowerCase()
+    );
+    if (matchIdx === -1) return;
+
+    players[matchIdx].archived = false;
+    players[matchIdx].name = name;
+    players[idx].archived = true;
+    players[idx].name = "";
+    if (state.activePlayer === idx) state.activePlayer = null;
+    saveState();
+    renderPlayerInputs();
+    showToast(`Restored ${name}'s previous stats`);
+  }
+
   function renderPlayerInputs() {
     if (!gameCode) {
       playersNoGameEl.hidden = false;
@@ -664,6 +692,7 @@
         currentPlayers()[idx].name = input.value;
         saveState();
       });
+      input.addEventListener("blur", () => mergeWithArchivedDuplicate(idx));
 
       const removeBtn = document.createElement("button");
       removeBtn.className = "player-remove";
