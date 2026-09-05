@@ -61,9 +61,11 @@ browser doesn't support sharing.
   3. **Record** — pick the active player and tap stats as they happen, for
      the current game's players.
   4. **Summary** — the only tab where other people's contributions show up
-     (see "Set up live sharing" below). Full stat breakdown and fantasy score
-     for every player, sortable by tapping any column, with a reset for your
-     own stats. **Save Game** freezes a snapshot of the current scoreboard
+     (see "Set up live sharing" below). A **Top 3** leaderboard (cards, by
+     fantasy score) sits above the full stat breakdown table for every
+     player, including a **Fantasy Pts** column, sortable by tapping any
+     column, with a reset for your own stats. **Save Game** freezes a
+     snapshot of the current scoreboard
      (players, stats, scores, game details) into a "Saved games" list on the
      Game tab — handy before you reset stats or delete a game, since neither
      of those touches saved records. Saved games are local to this device

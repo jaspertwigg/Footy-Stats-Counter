@@ -828,7 +828,7 @@
   const TABLE_COLUMNS = [
     { key: "name", label: "Player" },
     ...STAT_DEFS.map((d) => ({ key: d.key, label: abbrev(d) })),
-    { key: "score", label: "Score" },
+    { key: "score", label: "Fantasy Pts" },
   ];
 
   function sortRows(rows, key, dir) {
@@ -889,9 +889,9 @@
           : `Live in game ${gameCode} — waiting for others to join.`;
     }
 
-    // Score cards: always highest fantasy score first, recalculated fresh
-    // every time this renders so the leaderboard order stays live.
-    const ranked = sortRows(base, "score", "desc");
+    // Score cards: top 3 by fantasy score only, recalculated fresh every
+    // time this renders so the leaderboard stays live as scores change.
+    const ranked = sortRows(base, "score", "desc").slice(0, 3);
     summaryCardsEl.innerHTML = "";
     ranked.forEach((p, i) => {
       const card = document.createElement("div");
