@@ -18,7 +18,10 @@
 
 <header class="app-header">
   <h1>Footy Stats Counter</h1>
-  <button id="game-code-btn" class="game-code-btn">Solo mode</button>
+  <div class="header-actions">
+    <button id="share-app-btn" class="icon-btn" aria-label="Share app">📤</button>
+    <button id="game-code-btn" class="game-code-btn">Solo mode</button>
+  </div>
 </header>
 
 <main id="view-setup" class="view active">
@@ -26,7 +29,10 @@
     <p class="hint">Currently in</p>
     <div class="game-info-title" id="setup-current-title"></div>
     <div class="game-info-meta" id="setup-current-meta"></div>
-    <div class="game-info-code">Code: <span id="setup-current-code"></span></div>
+    <div class="game-info-code-row">
+      <div class="game-info-code">Code: <span id="setup-current-code"></span></div>
+      <button id="setup-copy-code-btn" class="icon-btn" aria-label="Copy game code">📋</button>
+    </div>
     <button id="setup-edit-btn" class="setup-choice-btn">Edit Details</button>
     <button id="setup-switch-btn" class="setup-secondary-btn">Switch Game</button>
     <button id="setup-leave-btn" class="setup-secondary-btn">Leave — play solo</button>

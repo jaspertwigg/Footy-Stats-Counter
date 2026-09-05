@@ -46,6 +46,16 @@ html, body {
   font-size: 19px;
   font-weight: 700;
   letter-spacing: 0.2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 .game-code-btn {
   flex: 0 0 auto;
@@ -59,6 +69,21 @@ html, body {
   white-space: nowrap;
 }
 .game-code-btn:active { background: var(--surface-2); }
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.icon-btn:active { background: var(--surface-2); }
 
 .view {
   display: none;
@@ -109,8 +134,14 @@ html, body {
 }
 .game-info-title { font-size: 20px; font-weight: 800; margin-top: 2px; }
 .game-info-meta { color: var(--text-dim); font-size: 13.5px; margin-top: 4px; }
-.game-info-code {
+.game-info-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 12px;
+}
+.game-info-code {
   font-size: 14px;
   font-weight: 700;
   color: var(--green-strong);

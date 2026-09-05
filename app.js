@@ -203,6 +203,39 @@
 
   gameCodeBtn.addEventListener("click", () => switchTab("setup"));
 
+  // ---------- Sharing ----------
+  // Copies text with the Clipboard API where available (requires HTTPS and
+  // a user-gesture-triggered call, both true here), falling back to a
+  // prompt() the user can manually copy from if it's unsupported or denied.
+  function copyToClipboard(text, successMessage) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => showToast(successMessage))
+        .catch(() => prompt("Copy this:", text));
+    } else {
+      prompt("Copy this:", text);
+    }
+  }
+
+  document.getElementById("share-app-btn").addEventListener("click", () => {
+    const url = window.location.origin + window.location.pathname;
+    if (navigator.share) {
+      navigator.share({
+        title: "Footy Stats Counter",
+        text: "Track AFL player stats fast, right from your phone.",
+        url,
+      }).catch(() => {}); // ignore cancellation
+    } else {
+      copyToClipboard(url, "App link copied");
+    }
+  });
+
+  document.getElementById("setup-copy-code-btn").addEventListener("click", () => {
+    if (!gameCode) return;
+    copyToClipboard(gameCode, "Game code copied");
+  });
+
   // ---------- Game Setup tab ----------
   // Game metadata (competition/teams/round/date) is stored on the parent
   // games/{code} document, separately from the per-device players/stats

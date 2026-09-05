@@ -5,6 +5,11 @@ for use pitch-side on an iPhone. No App Store, no build step — open it in
 Safari and add it to your home screen for a full-screen, app-like experience
 that works offline.
 
+The share icon (📤) in the top right sends the app's link via the device's
+native share sheet (Messages, WhatsApp, etc.) so you can get others onto it
+without going through GitHub — falls back to copying the link if the
+browser doesn't support sharing.
+
 ## Features
 
 - Players and their stats **belong to whichever game you're currently in** —
@@ -49,7 +54,8 @@ that works offline.
      **Delete This Game** (a real delete — it erases the game's players and
      stats too, and removes it for everyone sharing that code, not just
      you). Games in the "joined before" list can also be deleted
-     individually.
+     individually. The current game's code has a copy button (📋) next to
+     it for pasting into a text message or group chat.
   2. **Players** — add/remove players for whichever game is currently
      active. Each game has its own roster.
   3. **Record** — pick the active player and tap stats as they happen, for
