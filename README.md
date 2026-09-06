@@ -70,9 +70,11 @@ browser doesn't support sharing.
   4. **Summary** — the only tab where other people's contributions show up
      (see "Set up live sharing" below). A **Top 3** leaderboard (cards, by
      fantasy score) sits above the full stat breakdown table for every
-     player, with the fantasy score as an **AF** column right after the
-     player's name, sortable by tapping any column, with a reset for your
-     own stats. **Save Game** freezes a snapshot of the current scoreboard
+     player. Table columns, in order: **Player**, **AF** (fantasy score),
+     **G.B** (goals.behinds, e.g. "3.4"), **D** (disposals — kicks +
+     handballs), then the rest of the individual stats. Sortable by tapping
+     any column, with a reset for your own stats. **Save Game** freezes a
+     snapshot of the current scoreboard
      (players, stats, scores, game details) into a "Saved games" list on the
      Game tab — handy before you reset stats or delete a game, since neither
      of those touches saved records. Saved games are local to this device

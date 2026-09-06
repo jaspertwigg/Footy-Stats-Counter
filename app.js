@@ -863,11 +863,23 @@
   let summarySortKey = "score";
   let summarySortDir = "desc";
 
+  // Goals and behinds display as one combined "G.B" column (e.g. "3.4"),
+  // and disposals (kicks + handballs) is a computed column of its own —
+  // neither is a real STAT_DEFS entry, so the remaining stat columns are
+  // everything else in their usual order.
+  const REMAINING_STAT_DEFS = STAT_DEFS.filter((d) => d.key !== "goals" && d.key !== "behinds");
+
   const TABLE_COLUMNS = [
     { key: "name", label: "Player" },
     { key: "score", label: "AF" },
-    ...STAT_DEFS.map((d) => ({ key: d.key, label: abbrev(d) })),
+    { key: "gb", label: "G.B" },
+    { key: "disposals", label: "D" },
+    ...REMAINING_STAT_DEFS.map((d) => ({ key: d.key, label: abbrev(d) })),
   ];
+
+  function disposalsFor(stats) {
+    return (stats.kicks || 0) + (stats.handballs || 0);
+  }
 
   function sortRows(rows, key, dir) {
     const sorted = [...rows].sort((a, b) => {
@@ -876,6 +888,10 @@
         cmp = a.name.localeCompare(b.name);
       } else if (key === "score") {
         cmp = a.score - b.score;
+      } else if (key === "gb") {
+        cmp = (a.stats.goals || 0) - (b.stats.goals || 0);
+      } else if (key === "disposals") {
+        cmp = disposalsFor(a.stats) - disposalsFor(b.stats);
       } else {
         cmp = (a.stats[key] || 0) - (b.stats[key] || 0);
       }
@@ -972,7 +988,9 @@
 
     tbody.innerHTML = tableRows
       .map(
-        (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="score-cell">${p.score}</td>${STAT_DEFS.map(
+        (p) => `<tr><td>${escapeHtml(p.name)}</td><td class="score-cell">${p.score}</td><td>${
+          p.stats.goals || 0
+        }.${p.stats.behinds || 0}</td><td>${disposalsFor(p.stats)}</td>${REMAINING_STAT_DEFS.map(
           (d) => `<td>${p.stats[d.key] || 0}</td>`
         ).join("")}</tr>`
       )
