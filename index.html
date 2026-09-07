@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Corner Box — 2 Player Grid Piece Game</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Corner Box</h1>
+    <p class="subtitle">Place all your pieces. New pieces must touch a <strong>corner</strong> of one of your own pieces, never an <strong>edge</strong> of your own pieces. Opponent edges are fine to touch. Fewest pieces left when the game ends wins.</p>
+  </header>
+
+  <div id="status-bar">
+    <div id="turn-indicator" class="turn-indicator"></div>
+    <div id="message" class="message"></div>
+    <button id="new-game-btn">New Game</button>
+  </div>
+
+  <main id="game-area">
+    <section class="tray" id="tray-p1">
+      <h2 class="tray-title p1-color">Player 1</h2>
+      <div class="tray-stats" id="stats-p1"></div>
+      <div class="tray-grid" id="pieces-p1"></div>
+    </section>
+
+    <section class="board-section">
+      <div id="board-controls">
+        <button id="rotate-cw-btn" title="Rotate clockwise (R)">⟳ Rotate</button>
+        <button id="rotate-ccw-btn" title="Rotate counter-clockwise (Shift+R)">⟲ Rotate</button>
+        <button id="flip-btn" title="Flip (F)">⇋ Flip</button>
+        <button id="pass-btn" title="Pass turn" disabled>Pass Turn</button>
+        <button id="deselect-btn" title="Deselect (Esc)">✕ Deselect</button>
+      </div>
+      <div id="board" class="board"></div>
+    </section>
+
+    <section class="tray" id="tray-p2">
+      <h2 class="tray-title p2-color">Player 2</h2>
+      <div class="tray-stats" id="stats-p2"></div>
+      <div class="tray-grid" id="pieces-p2"></div>
+    </section>
+  </main>
+
+  <footer>
+    <details>
+      <summary>Rules</summary>
+      <ul>
+        <li>Each player has 21 pieces: every free polyomino shape made of 1, 2, 3, 4 and 5 squares joined edge-to-edge.</li>
+        <li>Pieces can be rotated and flipped freely before placing.</li>
+        <li>Your first piece must cover your starting dot.</li>
+        <li>Every piece after that must touch at least one <strong>corner</strong> of one of your own already-placed pieces.</li>
+        <li>No cell of a new piece may share a full <strong>edge</strong> with one of your own already-placed pieces.</li>
+        <li>Touching an opponent's piece — by edge or corner — is always allowed.</li>
+        <li>If you have no legal placement, you must pass. The game ends when both players pass in a row (or run out of pieces). Whoever has <strong>fewer pieces remaining</strong> wins.</li>
+      </ul>
+    </details>
+  </footer>
+
+  <script src="game.js"></script>
+</body>
+</html>
