@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Quest</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧭</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="app-title"><span class="app-title__logo">🧭</span> Claude Quest</div>
+
+      <div class="level-block">
+        <div class="level-badge" id="level-badge">1</div>
+        <div class="level-meta">
+          <div class="level-title" id="level-title">Prompt Novice</div>
+          <div class="xp-bar"><div class="xp-bar__fill" id="xp-fill"></div></div>
+          <div class="xp-label" id="xp-label">0 / 100 XP</div>
+        </div>
+      </div>
+
+      <div class="header-spacer"></div>
+
+      <div class="streak-pill">🔥 <span id="streak-count">0</span></div>
+      <div class="xp-total-pill">✨ <span id="total-xp">0</span> XP</div>
+      <button class="icon-btn" id="sound-toggle" aria-label="Toggle sound">🔊</button>
+      <button class="daily-btn" id="daily-btn"><span>⭐</span><span class="daily-btn__label">Daily Challenge</span></button>
+    </header>
+
+    <nav class="tab-bar">
+      <button class="tab-btn tab-btn--active" data-tab="map">Skill Map</button>
+      <button class="tab-btn" data-tab="achievements">Achievements</button>
+      <button class="tab-btn" data-tab="stats">Stats</button>
+    </nav>
+
+    <main>
+      <section id="tab-map" class="tab-panel tab-panel--active">
+        <p class="section-heading">Pick a skill tree and start clearing quests. Each one teaches a real technique for getting better results out of Claude.</p>
+        <div class="skill-grid" id="skill-grid"></div>
+      </section>
+
+      <section id="tab-achievements" class="tab-panel">
+        <p class="section-heading">Badges earned along the way.</p>
+        <div class="achievements-grid" id="achievements-grid"></div>
+      </section>
+
+      <section id="tab-stats" class="tab-panel">
+        <p class="section-heading">Your progress at a glance.</p>
+        <div id="stats-body"></div>
+      </section>
+    </main>
+
+    <footer class="app-footer">Progress is saved locally in this browser.</footer>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal__panel">
+      <button class="modal__close" id="modal-close" aria-label="Close">✕</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+  <canvas id="confetti-canvas"></canvas>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
