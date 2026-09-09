@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'claudeQuestState_v2';
+  const STORAGE_KEY = 'claudeQuestState_v3';
   const MEMORY_PAIR_COUNT = 6;
   const BOLT_PICK_DELAY_MS = 650;
 
@@ -28,10 +28,13 @@
       xp: 0,
       memoryCleared: {},      // categoryId -> { moves }
       raceWon: {},            // categoryId -> true (sticky, once ever beaten)
+      bugHuntCleared: {},     // categoryId -> { wrongGuesses }
       memoryXpGiven: {},      // categoryId -> true
       raceXpGiven: {},        // categoryId -> true
+      bugHuntXpGiven: {},     // categoryId -> true
       perfectRecallAchieved: false,
       photoFinishAchieved: false,
+      sharpEyeAchieved: false,
       raceWinStreak: 0,
       bestRaceWinStreak: 0,
       gamesCompleted: 0,
@@ -95,11 +98,15 @@
     return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
   }
 
-  function dailyCategory() {
+  const DAILY_GAME_TYPES = ['memory', 'race', 'bughunt'];
+
+  function dailyPick() {
     const key = todayKey();
     let hash = 0;
     for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    return CATEGORIES[hash % CATEGORIES.length];
+    const category = CATEGORIES[hash % CATEGORIES.length];
+    const gameType = DAILY_GAME_TYPES[Math.floor(hash / CATEGORIES.length) % DAILY_GAME_TYPES.length];
+    return { category, gameType };
   }
 
   function markDailyPlayed() {
@@ -219,7 +226,7 @@
     const dailyDone = state.lastDailyDate === todayKey();
     const dailyBtn = document.getElementById('daily-btn');
     dailyBtn.classList.toggle('daily-btn--done', dailyDone);
-    dailyBtn.querySelector('.daily-btn__label').textContent = dailyDone ? 'Daily Done ✓' : 'Daily Race';
+    dailyBtn.querySelector('.daily-btn__label').textContent = dailyDone ? 'Daily Done ✓' : 'Daily Challenge';
   }
 
   // ---------- rendering: skill map ----------
@@ -230,7 +237,9 @@
     CATEGORIES.forEach((cat) => {
       const memDone = state.memoryCleared[cat.id];
       const raceDone = state.raceWon[cat.id];
-      const pct = (memDone ? 50 : 0) + (raceDone ? 50 : 0);
+      const snagDone = state.bugHuntCleared[cat.id];
+      const doneCount = (memDone ? 1 : 0) + (raceDone ? 1 : 0) + (snagDone ? 1 : 0);
+      const pct = Math.round((doneCount / 3) * 100);
       const card = document.createElement('button');
       card.className = 'skill-card';
       card.style.setProperty('--cat-color', cat.color);
@@ -242,6 +251,7 @@
         <div class="skill-card__status">
           <span>🧠 ${memDone ? `${memDone.moves} moves` : 'unplayed'}</span>
           <span>🏁 ${raceDone ? 'beat BOLT' : 'unplayed'}</span>
+          <span>🔍 ${snagDone ? `${snagDone.wrongGuesses} miss${snagDone.wrongGuesses === 1 ? '' : 'es'}` : 'unplayed'}</span>
         </div>
       `;
       card.addEventListener('click', () => openArena(cat.id));
@@ -253,6 +263,7 @@
     const cat = CATEGORIES.find((c) => c.id === categoryId);
     const memDone = state.memoryCleared[categoryId];
     const raceDone = state.raceWon[categoryId];
+    const snagDone = state.bugHuntCleared[categoryId];
     document.querySelector('.modal__panel').style.setProperty('--cat-color', cat.color);
     document.getElementById('modal-body').innerHTML = `
       <div class="cat-header">
@@ -272,9 +283,16 @@
           <div class="arena-choice__desc">Draft technique cards, race BOLT to the best prompt.</div>
           <div class="arena-choice__status">${raceDone ? 'You\'ve beaten BOLT' : 'Not raced yet'}</div>
         </button>
+        <button class="arena-choice" id="choice-snag">
+          <div class="arena-choice__icon">🔍</div>
+          <div class="arena-choice__name">Spot the Snag</div>
+          <div class="arena-choice__desc">Read a real scenario, click the one thing that's actually wrong.</div>
+          <div class="arena-choice__status">${snagDone ? `Solved in ${snagDone.wrongGuesses} wrong guess${snagDone.wrongGuesses === 1 ? '' : 'es'}` : 'Not played yet'}</div>
+        </button>
       </div>
     `;
     document.getElementById('choice-memory').addEventListener('click', () => openMemoryGame(categoryId, false));
+    document.getElementById('choice-snag').addEventListener('click', () => openBugHunt(categoryId, false));
     document.getElementById('choice-race').addEventListener('click', () => openRaceGame(categoryId, false));
     openModal();
   }
@@ -293,7 +311,7 @@
     });
     cards = shuffle(cards);
 
-    const gameState = { cards, flipped: [], moves: 0, matchedPairs: 0, busy: false };
+    const gameState = { cards, flipped: [], moves: 0, matchedPairs: 0, busy: false, mismatch: false };
 
     function render() {
       const body = document.getElementById('modal-body');
@@ -305,6 +323,7 @@
         </div>
         <p class="quest-scenario">Find each technique and its payoff. BOLT's best on this deck: ${BOLT.memoryBestMoves} moves.</p>
         <div class="memory-grid" id="memory-grid"></div>
+        ${gameState.mismatch ? '<div class="modal-actions"><button class="btn btn--secondary" id="mismatch-continue">Not a match — flip back</button></div>' : ''}
       `;
       const grid = document.getElementById('memory-grid');
       gameState.cards.forEach((card, idx) => {
@@ -317,6 +336,14 @@
         }
         grid.appendChild(btn);
       });
+      if (gameState.mismatch) {
+        document.getElementById('mismatch-continue').addEventListener('click', () => {
+          gameState.flipped = [];
+          gameState.mismatch = false;
+          gameState.busy = false;
+          render();
+        });
+      }
     }
 
     function flipCard(idx) {
@@ -342,11 +369,9 @@
             setTimeout(() => finishMemoryGame(categoryId, isDaily, gameState.moves), 400);
           }
         } else {
-          setTimeout(() => {
-            gameState.flipped = [];
-            gameState.busy = false;
-            render();
-          }, 700);
+          soundBad();
+          gameState.mismatch = true;
+          render();
         }
       }
     }
@@ -404,6 +429,108 @@
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
+  }
+
+  // ================= SPOT THE SNAG =================
+  // A short realistic passage with a few clickable phrases; exactly one is
+  // the actual problem. Wrong clicks explain why that phrase is fine and
+  // stay ruled out — no time pressure, just fewer or more guesses.
+
+  function openBugHunt(categoryId, isDaily) {
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const hunt = BUG_HUNTS[categoryId];
+    document.querySelector('.modal__panel').style.setProperty('--cat-color', cat.color);
+
+    const gameState = { wrongGuesses: 0, ruledOut: new Set(), lastFeedback: null };
+
+    function render() {
+      const body = document.getElementById('modal-body');
+      body.innerHTML = `
+        ${isDaily ? '<div class="daily-tag">⭐ Daily Challenge</div>' : ''}
+        <div class="game-head">
+          <h2>${cat.icon} Spot the Snag</h2>
+          <div class="game-stat">Wrong guesses: <span>${gameState.wrongGuesses}</span></div>
+        </div>
+        <p class="quest-scenario">Click the phrase that's actually the problem. Everything else is fine — take your time.</p>
+        <p class="snag-passage" id="snag-passage"></p>
+        ${gameState.lastFeedback ? `<div class="feedback feedback--wrong"><p>${gameState.lastFeedback}</p></div>` : ''}
+      `;
+      const passageEl = document.getElementById('snag-passage');
+      hunt.segments.forEach((seg) => {
+        if (!seg.id) {
+          passageEl.appendChild(document.createTextNode(seg.text));
+          return;
+        }
+        const span = document.createElement('span');
+        span.textContent = seg.text;
+        const ruledOut = gameState.ruledOut.has(seg.id);
+        span.className = `snag-span${ruledOut ? ' snag-span--ruled-out' : ''}`;
+        if (!ruledOut) {
+          span.addEventListener('click', () => guess(seg));
+        }
+        passageEl.appendChild(span);
+      });
+    }
+
+    function guess(seg) {
+      if (seg.correct) {
+        finishBugHunt(categoryId, isDaily, gameState.wrongGuesses);
+      } else {
+        gameState.wrongGuesses++;
+        gameState.ruledOut.add(seg.id);
+        gameState.lastFeedback = seg.feedback;
+        soundFlip();
+        render();
+      }
+    }
+
+    render();
+    openModal();
+  }
+
+  function finishBugHunt(categoryId, isDaily, wrongGuesses) {
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const hunt = BUG_HUNTS[categoryId];
+    const target = hunt.segments.find((s) => s.correct);
+    const totalClicks = wrongGuesses + 1;
+    const beatBolt = totalClicks <= BOLT.bugHuntBest;
+    const already = !!state.bugHuntCleared[categoryId];
+    const priorBest = already ? state.bugHuntCleared[categoryId].wrongGuesses : Infinity;
+    state.bugHuntCleared[categoryId] = { wrongGuesses: Math.min(wrongGuesses, priorBest) };
+
+    let xpEarned = 0;
+    if (!state.bugHuntXpGiven[categoryId]) {
+      xpEarned = 40 + (beatBolt ? 15 : 0);
+      if (isDaily) xpEarned += Math.round(xpEarned * 0.5);
+      state.bugHuntXpGiven[categoryId] = true;
+      state.xp += xpEarned;
+    }
+    if (wrongGuesses === 0) state.sharpEyeAchieved = true;
+    state.gamesCompleted++;
+    if (isDaily) markDailyPlayed();
+
+    soundGood();
+
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+      <div class="game-head"><h2>${cat.icon} Spot the Snag — Solved!</h2></div>
+      <div class="feedback feedback--correct">
+        <div class="feedback__headline">${wrongGuesses === 0 ? '🎯 Nailed it on the first try!' : '✅ Found it!'}</div>
+        <p>${target.feedback}</p>
+        <p class="bolt-line">${pick(beatBolt ? BOLT.snagWinPlayer : BOLT.snagWinBolt)} (BOLT usually needs ${BOLT.bugHuntBest} clicks.)</p>
+        ${xpEarned ? `<div class="feedback__xp">+${xpEarned} XP</div>` : ''}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn--secondary" id="replay-btn">Play Again</button>
+        <button class="btn btn--primary" id="continue-btn">Continue</button>
+      </div>
+    `;
+    document.getElementById('replay-btn').addEventListener('click', () => openBugHunt(categoryId, false));
+    document.getElementById('continue-btn').addEventListener('click', () => { closeModal(); handleGameComplete(); });
+
+    saveState();
+    renderHeader();
+    renderSkillMap();
   }
 
   // ================= PROMPT RACE =================
@@ -619,6 +746,7 @@
   function renderStats() {
     const memDone = Object.keys(state.memoryCleared).length;
     const raceDone = Object.keys(state.raceWon).length;
+    const snagDone = Object.keys(state.bugHuntCleared).length;
     const prog = levelProgress(state.xp);
     document.getElementById('stats-body').innerHTML = `
       <div class="stat-grid">
@@ -626,6 +754,7 @@
         <div class="stat-tile"><div class="stat-tile__value">${state.xp}</div><div class="stat-tile__label">Total XP</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${memDone} / ${CATEGORIES.length}</div><div class="stat-tile__label">Decks Cleared</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${raceDone} / ${CATEGORIES.length}</div><div class="stat-tile__label">Races Won</div></div>
+        <div class="stat-tile"><div class="stat-tile__value">${snagDone} / ${CATEGORIES.length}</div><div class="stat-tile__label">Snags Solved</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${state.dailyStreak}</div><div class="stat-tile__label">Daily Streak</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${state.badges.length} / ${BADGES.length}</div><div class="stat-tile__label">Badges</div></div>
       </div>
@@ -707,10 +836,13 @@
     });
     document.getElementById('daily-btn').addEventListener('click', () => {
       if (state.lastDailyDate === todayKey()) {
-        showToast('Already raced today — come back tomorrow!', 'info');
+        showToast('Already played today — come back tomorrow!', 'info');
         return;
       }
-      openRaceGame(dailyCategory().id, true);
+      const { category, gameType } = dailyPick();
+      if (gameType === 'memory') openMemoryGame(category.id, true);
+      else if (gameType === 'bughunt') openBugHunt(category.id, true);
+      else openRaceGame(category.id, true);
     });
 
     document.addEventListener('click', (e) => {

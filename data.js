@@ -1,9 +1,11 @@
 // Claude Quest — game content
 //
-// Two mini-games per category:
+// Three mini-games per category:
 //  - MEMORY_DECKS[categoryId]: 6 {term, match} pairs for a flip-and-match game.
 //  - RACE_SCENARIOS[categoryId]: a scenario + 8 technique cards (label, points, note)
 //    for a turn-based race against the rival, BOLT.
+//  - BUG_HUNTS[categoryId]: a passage with clickable phrases, exactly one of
+//    which is the actual problem, for a diagnostic click-and-deduce game.
 
 const CATEGORIES = [
   {
@@ -156,11 +158,116 @@ const RACE_SCENARIOS = {
   },
 };
 
+// Spot the Snag: a short realistic passage with a few clickable phrases.
+// Exactly one (correct: true) is the actual problem; the rest are fine, and
+// their `feedback` explains why — so a wrong click still teaches something.
+const BUG_HUNTS = {
+  prompting: {
+    segments: [
+      { text: 'Hey Claude, can you ' },
+      { text: 'write a Python function that dedupes a list of customer records by email', id: 'a', correct: false,
+        feedback: "That's actually solid — it names the function's purpose and the exact rule for dedup." },
+      { text: ' — ' },
+      { text: "keep the most recently updated one when there's a duplicate", id: 'b', correct: false,
+        feedback: 'This is good — a concrete tie-breaker rule for handling duplicates.' },
+      { text: ' and ' },
+      { text: 'just make it good', id: 'c', correct: true,
+        feedback: "'Just make it good' doesn't say what to optimize for — style, performance, error handling? Naming the actual concern removes the guesswork." },
+      { text: ', oh and ' },
+      { text: 'return the result as a list, not a generator', id: 'd', correct: false,
+        feedback: 'Also fine — it specifies the exact output shape.' },
+      { text: '.' },
+    ],
+  },
+  'claude-code': {
+    segments: [
+      { text: 'Before starting, they ' },
+      { text: 'wrote a CLAUDE.md with the build and test commands', id: 'a', correct: false,
+        feedback: "Good move — that's exactly what CLAUDE.md is for." },
+      { text: ', then ' },
+      { text: 'turned off permission prompts so things would go faster', id: 'b', correct: true,
+        feedback: 'Permission prompts are your checkpoint before a risky action runs. Turning them off for speed removes the one safety net that catches a bad command before it executes.' },
+      { text: ', asked for ' },
+      { text: 'a plan before any files were touched', id: 'c', correct: false,
+        feedback: "That's Plan Mode working as intended — review before changes." },
+      { text: ', and ' },
+      { text: 'pointed the agent at the exact file needing a fix', id: 'd', correct: false,
+        feedback: 'Fine — a precise reference beats a vague description every time.' },
+      { text: '.' },
+    ],
+  },
+  agentic: {
+    segments: [
+      { text: 'The agent finished the feature, so they ' },
+      { text: 'had it run the test suite before calling it done', id: 'a', correct: false,
+        feedback: "Good — that's real verification, not an assumption." },
+      { text: ', ' },
+      { text: 'gave feedback pointing at the exact broken line', id: 'b', correct: false,
+        feedback: 'Also good — specific feedback is actionable feedback.' },
+      { text: ', but when the plan started drifting, they ' },
+      { text: 'waited until the very end to say anything', id: 'c', correct: true,
+        feedback: "Waiting lets a wrong turn compound the whole way through. Redirecting the moment it drifts is cheap; unwinding a finished wrong implementation is not." },
+      { text: ', and later ' },
+      { text: 'broke the next task into small reviewable checkpoints', id: 'd', correct: false,
+        feedback: 'Solid habit — smaller steps catch mistakes early.' },
+      { text: '.' },
+    ],
+  },
+  context: {
+    segments: [
+      { text: 'Deep into a long debugging session, they ' },
+      { text: 'pasted the entire 2,000-line build log into the chat', id: 'a', correct: true,
+        feedback: 'Context is scarce, and a wall of noise buries the one line that actually matters. Trimming to the real error (with a pointer to its source) works far better.' },
+      { text: ', while earlier they had ' },
+      { text: 'pointed to the exact file and line', id: 'b', correct: false,
+        feedback: 'Good — that skips the search-and-guess step entirely.' },
+      { text: ', ' },
+      { text: 'trimmed a different log down to just the real error', id: 'c', correct: false,
+        feedback: "Exactly right — that's signal over noise." },
+      { text: ', and ' },
+      { text: 'written a durable preference into a project file', id: 'd', correct: false,
+        feedback: 'Also good — that survives past the current chat.' },
+      { text: '.' },
+    ],
+  },
+  advanced: {
+    segments: [
+      { text: 'Facing a hard problem, they ' },
+      { text: 'demanded the final answer immediately, no reasoning shown', id: 'a', correct: true,
+        feedback: 'Skipping the reasoning step removes the chance to catch a flawed assumption before it becomes a flawed answer.' },
+      { text: ', but on other tasks they had ' },
+      { text: 'asked for a self-review pass against the requirements', id: 'b', correct: false,
+        feedback: 'Good habit — that catches mistakes before you ever see them.' },
+      { text: ', ' },
+      { text: 'given an exact schema plus one example', id: 'c', correct: false,
+        feedback: 'Also good — that makes structured output parse reliably.' },
+      { text: ', and ' },
+      { text: 'named concrete edge cases to check', id: 'd', correct: false,
+        feedback: "Fine — that turns 'looks right' into 'checked and works'." },
+      { text: '.' },
+    ],
+  },
+};
+
 // BOLT is the rival: fast, overconfident, never reads the fine print.
 const BOLT = {
   name: 'BOLT',
   icon: '🐇',
   memoryBestMoves: 9, // BOLT's benchmark on any 6-pair deck — beatable, not trivial
+  bugHuntBest: 2, // BOLT's benchmark total clicks (1 wrong guess, then the right one)
+  snagWrongGuess: [
+    "BOLT already clicked that one and moved on without reading the feedback.",
+    'BOLT nods confidently at the wrong phrase.',
+    'BOLT is very sure, and very wrong.',
+  ],
+  snagWinPlayer: [
+    "BOLT is still squinting at the wrong sentence.",
+    'BOLT skimmed right past the actual problem.',
+  ],
+  snagWinBolt: [
+    'BOLT got there eventually, mostly by accident.',
+    'Even a reckless bot spots the obvious one sometimes.',
+  ],
   raceIntro: [
     "BOLT strolls up, prompt already half-typed and definitely not proofread.",
     "BOLT: 'Description? I'll just wing it.'",
@@ -228,14 +335,19 @@ const BADGES = [
     check: (s) => s.photoFinishAchieved,
   },
   {
+    id: 'sharp-eye', icon: '👁️', name: 'Sharp Eye',
+    description: 'Spot the flaw on your very first click.',
+    check: (s) => s.sharpEyeAchieved,
+  },
+  {
     id: 'undefeated', icon: '🔥', name: 'Undefeated',
     description: 'Win 3 prompt races in a row.',
     check: (s) => s.bestRaceWinStreak >= 3,
   },
   {
     id: 'grandmaster', icon: '👑', name: 'Grandmaster of Claude',
-    description: 'Clear every memory deck and win every race.',
-    check: (s) => CATEGORIES.every((c) => s.memoryCleared[c.id]) && CATEGORIES.every((c) => s.raceWon[c.id]),
+    description: 'Clear every memory deck, win every race, and spot every snag.',
+    check: (s) => CATEGORIES.every((c) => s.memoryCleared[c.id]) && CATEGORIES.every((c) => s.raceWon[c.id]) && CATEGORIES.every((c) => s.bugHuntCleared[c.id]),
   },
   {
     id: 'week-streak', icon: '📅', name: 'Daily Devotee',
