@@ -3,7 +3,6 @@
   'use strict';
 
   const STORAGE_KEY = 'claudeQuestState_v1';
-  const QUESTION_TIME_LIMIT = 20; // seconds, multiple-choice only
   const REWRITE_PASS_RATIO = 0.34; // fraction of hints needed to "match" a keyword-scored rewrite
 
   const LEVEL_TITLES = [
@@ -303,8 +302,6 @@
 
   // ---------- quest play flow ----------
 
-  let activeTimer = null;
-
   function openQuest(questId, isDaily) {
     const quest = QUESTS_BY_ID[questId];
     if (quest.type === 'mc') renderMcQuest(quest, isDaily);
@@ -313,13 +310,11 @@
   }
 
   function renderMcQuest(quest, isDaily) {
-    clearActiveTimer();
     const cat = CATEGORIES.find((c) => c.id === quest.category);
     const body = document.getElementById('modal-body');
     modalSetColor(cat.color);
     body.innerHTML = `
       ${isDaily ? '<div class="daily-tag">⭐ Daily Challenge — bonus XP</div>' : ''}
-      <div class="timer-bar"><div class="timer-bar__fill" id="timer-fill"></div></div>
       <p class="quest-scenario">${quest.scenario}</p>
       <h3 class="quest-question">${quest.question}</h3>
       <div class="options" id="options"></div>
@@ -336,27 +331,12 @@
       btn.addEventListener('click', () => lockAnswer(quest, i, isDaily));
       optionsEl.appendChild(btn);
     });
-
-    let remaining = QUESTION_TIME_LIMIT;
-    const fill = document.getElementById('timer-fill');
-    fill.style.transition = `width ${QUESTION_TIME_LIMIT}s linear`;
-    requestAnimationFrame(() => { fill.style.width = '0%'; });
-    activeTimer = setTimeout(() => {
-      if (!optionsEl.dataset.locked) lockAnswer(quest, -1, isDaily);
-    }, QUESTION_TIME_LIMIT * 1000);
-  }
-
-  function clearActiveTimer() {
-    if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
   }
 
   function lockAnswer(quest, chosenIndex, isDaily) {
-    clearActiveTimer();
     const optionsEl = document.getElementById('options');
     if (optionsEl.dataset.locked) return;
     optionsEl.dataset.locked = 'true';
-    const fill = document.getElementById('timer-fill');
-    const timeUsedFraction = fill ? 1 - (parseFloat(getComputedStyle(fill).width) / fill.parentElement.clientWidth) : 1;
 
     const correct = chosenIndex === quest.correct;
     const buttons = optionsEl.querySelectorAll('.option-btn');
@@ -372,8 +352,7 @@
       state.correctStreak++;
       state.bestCorrectStreak = Math.max(state.bestCorrectStreak, state.correctStreak);
       if (!already) {
-        const speedBonus = Math.round(20 * Math.max(0, 1 - timeUsedFraction));
-        xpEarned = quest.xp + speedBonus;
+        xpEarned = quest.xp;
         const dailyBonus = isDaily ? Math.round(xpEarned * 0.5) : 0;
         xpEarned += dailyBonus;
         state.completed[quest.id] = { xpEarned, score: 100, attempts: 1 };
@@ -395,7 +374,7 @@
     feedback.hidden = false;
     feedback.className = `feedback ${correct ? 'feedback--correct' : 'feedback--wrong'}`;
     feedback.innerHTML = `
-      <div class="feedback__headline">${chosenIndex === -1 ? '⏱️ Time\'s up!' : correct ? '✅ Correct!' : '❌ Not quite.'}</div>
+      <div class="feedback__headline">${correct ? '✅ Correct!' : '❌ Not quite.'}</div>
       <p>${quest.explanation}</p>
       ${xpEarned ? `<div class="feedback__xp">+${xpEarned} XP</div>` : ''}
     `;
@@ -609,7 +588,6 @@
   }
 
   function closeModal() {
-    clearActiveTimer();
     document.getElementById('modal').classList.remove('modal--open');
   }
 

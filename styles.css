@@ -303,9 +303,6 @@ body {
 
 .daily-tag { font-weight: 800; color: var(--warn); margin-bottom: 10px; font-size: 0.85rem; }
 
-.timer-bar { height: 5px; background: var(--panel); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
-.timer-bar__fill { height: 100%; width: 100%; background: linear-gradient(90deg, var(--good), var(--warn), var(--bad)); }
-
 .quest-scenario { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 6px; }
 .quest-question { margin: 0 0 16px; font-size: 1.05rem; }
 

@@ -8,9 +8,9 @@ workflow habits, context management, and a few advanced tricks.
 
 ## How it plays
 
-- **Skill Map** — 5 categories, each a short set of quests: multiple-choice scenarios
-  (20-second timer, speed bonus XP) and "rewrite this prompt" exercises that are scored
-  against a keyword rubric and always show a strong example answer.
+- **Skill Map** — 5 categories, each a short set of quests: untimed multiple-choice
+  scenarios and "rewrite this prompt" exercises that are scored against a keyword
+  rubric and always show a strong example answer.
 - **XP & Levels** — clearing quests earns XP; leveling up triggers a title change and a
   confetti burst.
 - **Daily Challenge** — one bonus-XP question per day, picked deterministically by date.
