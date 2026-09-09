@@ -1,9 +1,10 @@
-// Claude Quest — app logic (vanilla JS, no build step required)
+// Claude Quest — game logic (vanilla JS, no build step required)
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'claudeQuestState_v1';
-  const REWRITE_PASS_RATIO = 0.34; // fraction of hints needed to "match" a keyword-scored rewrite
+  const STORAGE_KEY = 'claudeQuestState_v2';
+  const MEMORY_PAIR_COUNT = 6;
+  const BOLT_PICK_DELAY_MS = 650;
 
   const LEVEL_TITLES = [
     { min: 1, title: 'Prompt Novice' },
@@ -25,11 +26,17 @@
   function defaultState() {
     return {
       xp: 0,
-      completed: {},        // questId -> { xpEarned, score (0-100), attempts }
-      bestCorrectStreak: 0,
-      correctStreak: 0,
+      memoryCleared: {},      // categoryId -> { moves }
+      raceWon: {},            // categoryId -> true (sticky, once ever beaten)
+      memoryXpGiven: {},      // categoryId -> true
+      raceXpGiven: {},        // categoryId -> true
+      perfectRecallAchieved: false,
+      photoFinishAchieved: false,
+      raceWinStreak: 0,
+      bestRaceWinStreak: 0,
+      gamesCompleted: 0,
       badges: [],
-      lastDailyDate: null,  // YYYY-MM-DD of last completed daily challenge
+      lastDailyDate: null,
       dailyStreak: 0,
       soundOn: true,
     };
@@ -39,8 +46,7 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return defaultState();
-      const parsed = JSON.parse(raw);
-      return Object.assign(defaultState(), parsed);
+      return Object.assign(defaultState(), JSON.parse(raw));
     } catch (e) {
       return defaultState();
     }
@@ -68,19 +74,12 @@
     const level = levelFromXp(xp);
     const floor = totalXpForLevel(level);
     const ceil = totalXpForLevel(level + 1);
-    return {
-      level,
-      into: xp - floor,
-      needed: ceil - floor,
-      title: titleForLevel(level),
-    };
+    return { level, into: xp - floor, needed: ceil - floor, title: titleForLevel(level) };
   }
 
   function titleForLevel(level) {
     let title = LEVEL_TITLES[0].title;
-    for (const t of LEVEL_TITLES) {
-      if (level >= t.min) title = t.title;
-    }
+    for (const t of LEVEL_TITLES) if (level >= t.min) title = t.title;
     if (level > 12) title = `Claude Legend Lv.${level}`;
     return title;
   }
@@ -93,40 +92,44 @@
   }
 
   function daysBetween(a, b) {
-    const da = new Date(a + 'T00:00:00');
-    const db = new Date(b + 'T00:00:00');
-    return Math.round((db - da) / 86400000);
+    return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
   }
 
-  function dailyChallengeQuest() {
-    const mcQuests = QUESTS.filter((q) => q.type === 'mc');
+  function dailyCategory() {
     const key = todayKey();
     let hash = 0;
     for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    return mcQuests[hash % mcQuests.length];
+    return CATEGORIES[hash % CATEGORIES.length];
   }
 
-  // ---------- badge helpers ----------
-
-  function categoryComplete(categoryId) {
-    const quests = QUESTS_BY_CATEGORY[categoryId] || [];
-    return quests.length > 0 && quests.every((q) => state.completed[q.id]);
+  function markDailyPlayed() {
+    const today = todayKey();
+    if (state.lastDailyDate === today) return;
+    if (state.lastDailyDate) {
+      const gap = daysBetween(state.lastDailyDate, today);
+      state.dailyStreak = gap === 1 ? state.dailyStreak + 1 : 1;
+    } else {
+      state.dailyStreak = 1;
+    }
+    state.lastDailyDate = today;
   }
+
+  // ---------- badges ----------
 
   function checkBadges() {
-    const helpers = { categoryComplete, level: levelFromXp };
-    const newlyUnlocked = [];
+    const helpers = { level: levelFromXp };
+    const unlocked = [];
     for (const badge of BADGES) {
       if (state.badges.includes(badge.id)) continue;
       if (badge.check(state, helpers)) {
         state.badges.push(badge.id);
-        newlyUnlocked.push(badge);
+        unlocked.push(badge);
       }
     }
-    return newlyUnlocked;
+    return unlocked;
   }
 
-  // ---------- sound (tiny synthesized beeps, no assets needed) ----------
+  // ---------- sound ----------
 
   let audioCtx = null;
   function beep(freq, duration, type) {
@@ -142,13 +145,12 @@
       osc.connect(gain).connect(audioCtx.destination);
       osc.start();
       osc.stop(audioCtx.currentTime + duration);
-    } catch (e) { /* audio not available, ignore */ }
+    } catch (e) { /* audio not available */ }
   }
-  function soundCorrect() { beep(880, 0.15, 'sine'); setTimeout(() => beep(1175, 0.18, 'sine'), 90); }
-  function soundWrong() { beep(180, 0.28, 'sawtooth'); }
-  function soundLevelUp() {
-    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'triangle'), i * 110));
-  }
+  function soundGood() { beep(880, 0.15, 'sine'); setTimeout(() => beep(1175, 0.18, 'sine'), 90); }
+  function soundBad() { beep(180, 0.28, 'sawtooth'); }
+  function soundFlip() { beep(520, 0.08, 'triangle'); }
+  function soundLevelUp() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'triangle'), i * 110)); }
   function soundBadge() { beep(660, 0.12, 'square'); setTimeout(() => beep(990, 0.2, 'square'), 100); }
 
   // ---------- confetti ----------
@@ -177,25 +179,15 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       pieces.forEach((p) => {
         p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-        ctx.restore();
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
       });
       frame++;
-      if (frame < maxFrames) {
-        requestAnimationFrame(tick);
-      } else {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        canvas.classList.remove('active');
-      }
+      if (frame < maxFrames) requestAnimationFrame(tick);
+      else { ctx.clearRect(0, 0, canvas.width, canvas.height); canvas.classList.remove('active'); }
     }
     tick();
   }
-
-  // ---------- toast notifications ----------
 
   function showToast(html, kind) {
     const container = document.getElementById('toast-container');
@@ -204,23 +196,10 @@
     el.innerHTML = html;
     container.appendChild(el);
     requestAnimationFrame(() => el.classList.add('toast--show'));
-    setTimeout(() => {
-      el.classList.remove('toast--show');
-      setTimeout(() => el.remove(), 300);
-    }, 3200);
+    setTimeout(() => { el.classList.remove('toast--show'); setTimeout(() => el.remove(), 300); }, 3200);
   }
 
-  // ---------- rewrite scoring ----------
-
-  function scoreRewrite(text, hints) {
-    const lower = text.toLowerCase();
-    const matched = hints.filter((h) => {
-      const words = h.toLowerCase().split(/\s+or\s+|\s*,\s*|\s+/).filter((w) => w.length > 3);
-      return words.some((w) => lower.includes(w)) || lower.includes(h.toLowerCase());
-    });
-    const ratio = hints.length ? matched.length / hints.length : 0;
-    return { matched, ratio, score: Math.round(ratio * 100) };
-  }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
   // ---------- rendering: header ----------
 
@@ -240,7 +219,7 @@
     const dailyDone = state.lastDailyDate === todayKey();
     const dailyBtn = document.getElementById('daily-btn');
     dailyBtn.classList.toggle('daily-btn--done', dailyDone);
-    dailyBtn.querySelector('.daily-btn__label').textContent = dailyDone ? 'Daily Done ✓' : 'Daily Challenge';
+    dailyBtn.querySelector('.daily-btn__label').textContent = dailyDone ? 'Daily Done ✓' : 'Daily Race';
   }
 
   // ---------- rendering: skill map ----------
@@ -249,9 +228,9 @@
     const grid = document.getElementById('skill-grid');
     grid.innerHTML = '';
     CATEGORIES.forEach((cat) => {
-      const quests = QUESTS_BY_CATEGORY[cat.id];
-      const done = quests.filter((q) => state.completed[q.id]).length;
-      const pct = Math.round((done / quests.length) * 100);
+      const memDone = state.memoryCleared[cat.id];
+      const raceDone = state.raceWon[cat.id];
+      const pct = (memDone ? 50 : 0) + (raceDone ? 50 : 0);
       const card = document.createElement('button');
       card.className = 'skill-card';
       card.style.setProperty('--cat-color', cat.color);
@@ -260,215 +239,339 @@
         <div class="skill-card__name">${cat.name}</div>
         <div class="skill-card__desc">${cat.description}</div>
         <div class="skill-card__bar"><div class="skill-card__fill" style="width:${pct}%"></div></div>
-        <div class="skill-card__count">${done} / ${quests.length} mastered</div>
+        <div class="skill-card__status">
+          <span>🧠 ${memDone ? `${memDone.moves} moves` : 'unplayed'}</span>
+          <span>🏁 ${raceDone ? 'beat BOLT' : 'unplayed'}</span>
+        </div>
       `;
-      card.addEventListener('click', () => openCategory(cat.id));
+      card.addEventListener('click', () => openArena(cat.id));
       grid.appendChild(card);
     });
   }
 
-  function openCategory(categoryId) {
+  function openArena(categoryId) {
     const cat = CATEGORIES.find((c) => c.id === categoryId);
-    const quests = QUESTS_BY_CATEGORY[categoryId];
-    const modal = document.getElementById('modal');
-    modal.querySelector('.modal__panel').style.setProperty('--cat-color', cat.color);
+    const memDone = state.memoryCleared[categoryId];
+    const raceDone = state.raceWon[categoryId];
+    document.querySelector('.modal__panel').style.setProperty('--cat-color', cat.color);
     document.getElementById('modal-body').innerHTML = `
       <div class="cat-header">
         <span class="cat-header__icon">${cat.icon}</span>
-        <div>
-          <h2>${cat.name}</h2>
-          <p>${cat.description}</p>
+        <div><h2>${cat.name}</h2><p>${cat.description}</p></div>
+      </div>
+      <div class="arena-choices">
+        <button class="arena-choice" id="choice-memory">
+          <div class="arena-choice__icon">🧠</div>
+          <div class="arena-choice__name">Memory Match</div>
+          <div class="arena-choice__desc">Flip cards, match concepts to what they buy you.</div>
+          <div class="arena-choice__status">${memDone ? `Cleared in ${memDone.moves} moves` : 'Not played yet'}</div>
+        </button>
+        <button class="arena-choice" id="choice-race">
+          <div class="arena-choice__icon">🏁</div>
+          <div class="arena-choice__name">Prompt Race</div>
+          <div class="arena-choice__desc">Draft technique cards, race BOLT to the best prompt.</div>
+          <div class="arena-choice__status">${raceDone ? 'You\'ve beaten BOLT' : 'Not raced yet'}</div>
+        </button>
+      </div>
+    `;
+    document.getElementById('choice-memory').addEventListener('click', () => openMemoryGame(categoryId, false));
+    document.getElementById('choice-race').addEventListener('click', () => openRaceGame(categoryId, false));
+    openModal();
+  }
+
+  // ================= MEMORY MATCH =================
+
+  function openMemoryGame(categoryId, isDaily) {
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const pairs = MEMORY_DECKS[categoryId];
+    document.querySelector('.modal__panel').style.setProperty('--cat-color', cat.color);
+
+    let cards = [];
+    pairs.forEach((p, i) => {
+      cards.push({ pairId: i, text: p.term, matched: false });
+      cards.push({ pairId: i, text: p.match, matched: false });
+    });
+    cards = shuffle(cards);
+
+    const gameState = { cards, flipped: [], moves: 0, matchedPairs: 0, busy: false };
+
+    function render() {
+      const body = document.getElementById('modal-body');
+      body.innerHTML = `
+        ${isDaily ? '<div class="daily-tag">⭐ Daily Challenge</div>' : ''}
+        <div class="game-head">
+          <h2>${cat.icon} Memory Match</h2>
+          <div class="game-stat">Moves: <span id="move-count">${gameState.moves}</span></div>
         </div>
-      </div>
-      <div class="quest-list">
-        ${quests.map((q) => {
-          const done = state.completed[q.id];
-          const label = q.type === 'mc' ? q.question : q.task;
-          return `
-            <button class="quest-row ${done ? 'quest-row--done' : ''}" data-quest-id="${q.id}">
-              <span class="quest-row__status">${done ? '✅' : '▫️'}</span>
-              <span class="quest-row__label">${label}</span>
-              <span class="quest-row__xp">${done ? `+${done.xpEarned} XP` : `${q.xp} XP`}</span>
-            </button>
-          `;
-        }).join('')}
-      </div>
-    `;
-    document.getElementById('modal-body').querySelectorAll('.quest-row').forEach((row) => {
-      row.addEventListener('click', () => openQuest(row.dataset.questId, false));
-    });
-    openModal();
-  }
-
-  // ---------- quest play flow ----------
-
-  function openQuest(questId, isDaily) {
-    const quest = QUESTS_BY_ID[questId];
-    if (quest.type === 'mc') renderMcQuest(quest, isDaily);
-    else renderRewriteQuest(quest, isDaily);
-    openModal();
-  }
-
-  function renderMcQuest(quest, isDaily) {
-    const cat = CATEGORIES.find((c) => c.id === quest.category);
-    const body = document.getElementById('modal-body');
-    modalSetColor(cat.color);
-    body.innerHTML = `
-      ${isDaily ? '<div class="daily-tag">⭐ Daily Challenge — bonus XP</div>' : ''}
-      <p class="quest-scenario">${quest.scenario}</p>
-      <h3 class="quest-question">${quest.question}</h3>
-      <div class="options" id="options"></div>
-      <div class="feedback" id="feedback" hidden></div>
-      <div class="modal-actions" id="modal-actions" hidden>
-        <button class="btn btn--primary" id="continue-btn">Continue</button>
-      </div>
-    `;
-    const optionsEl = document.getElementById('options');
-    quest.options.forEach((opt, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'option-btn';
-      btn.textContent = opt;
-      btn.addEventListener('click', () => lockAnswer(quest, i, isDaily));
-      optionsEl.appendChild(btn);
-    });
-  }
-
-  function lockAnswer(quest, chosenIndex, isDaily) {
-    const optionsEl = document.getElementById('options');
-    if (optionsEl.dataset.locked) return;
-    optionsEl.dataset.locked = 'true';
-
-    const correct = chosenIndex === quest.correct;
-    const buttons = optionsEl.querySelectorAll('.option-btn');
-    buttons.forEach((btn, i) => {
-      btn.disabled = true;
-      if (i === quest.correct) btn.classList.add('option-btn--correct');
-      else if (i === chosenIndex) btn.classList.add('option-btn--wrong');
-    });
-
-    const already = !!state.completed[quest.id];
-    let xpEarned = 0;
-    if (correct) {
-      state.correctStreak++;
-      state.bestCorrectStreak = Math.max(state.bestCorrectStreak, state.correctStreak);
-      if (!already) {
-        xpEarned = quest.xp;
-        const dailyBonus = isDaily ? Math.round(xpEarned * 0.5) : 0;
-        xpEarned += dailyBonus;
-        state.completed[quest.id] = { xpEarned, score: 100, attempts: 1 };
-        state.xp += xpEarned;
-      }
-      soundCorrect();
-    } else {
-      state.correctStreak = 0;
-      soundWrong();
+        <p class="quest-scenario">Find each technique and its payoff. BOLT's best on this deck: ${BOLT.memoryBestMoves} moves.</p>
+        <div class="memory-grid" id="memory-grid"></div>
+      `;
+      const grid = document.getElementById('memory-grid');
+      gameState.cards.forEach((card, idx) => {
+        const btn = document.createElement('button');
+        const isOpen = card.matched || gameState.flipped.includes(idx);
+        btn.className = `memory-card ${isOpen ? 'memory-card--open' : ''} ${card.matched ? 'memory-card--matched' : ''}`;
+        btn.innerHTML = isOpen ? `<span>${card.text}</span>` : `<span class="memory-card__back">🧭</span>`;
+        if (!isOpen && !gameState.busy) {
+          btn.addEventListener('click', () => flipCard(idx));
+        }
+        grid.appendChild(btn);
+      });
     }
 
+    function flipCard(idx) {
+      if (gameState.busy) return;
+      if (gameState.flipped.includes(idx) || gameState.cards[idx].matched) return;
+      soundFlip();
+      gameState.flipped.push(idx);
+      render();
+      if (gameState.flipped.length === 2) {
+        gameState.moves++;
+        gameState.busy = true;
+        const [a, b] = gameState.flipped;
+        const isMatch = gameState.cards[a].pairId === gameState.cards[b].pairId;
+        if (isMatch) {
+          gameState.cards[a].matched = true;
+          gameState.cards[b].matched = true;
+          gameState.matchedPairs++;
+          gameState.flipped = [];
+          gameState.busy = false;
+          soundGood();
+          render();
+          if (gameState.matchedPairs === MEMORY_PAIR_COUNT) {
+            setTimeout(() => finishMemoryGame(categoryId, isDaily, gameState.moves), 400);
+          }
+        } else {
+          setTimeout(() => {
+            gameState.flipped = [];
+            gameState.busy = false;
+            render();
+          }, 700);
+        }
+      }
+    }
+
+    render();
+    openModal();
+  }
+
+  function finishMemoryGame(categoryId, isDaily, moves) {
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const beatBolt = moves <= BOLT.memoryBestMoves;
+    const already = !!state.memoryCleared[categoryId];
+    const priorBest = already ? state.memoryCleared[categoryId].moves : Infinity;
+    state.memoryCleared[categoryId] = { moves: Math.min(moves, priorBest) };
+
+    let xpEarned = 0;
+    if (!state.memoryXpGiven[categoryId]) {
+      xpEarned = 40 + (beatBolt ? 15 : 0);
+      if (isDaily) xpEarned += Math.round(xpEarned * 0.5);
+      state.memoryXpGiven[categoryId] = true;
+      state.xp += xpEarned;
+    }
+    if (moves <= MEMORY_PAIR_COUNT) state.perfectRecallAchieved = true;
+    state.gamesCompleted++;
     if (isDaily) markDailyPlayed();
 
-    saveState();
-    renderHeader();
-    renderSkillMap();
+    if (beatBolt) soundGood(); else soundBad();
 
-    const feedback = document.getElementById('feedback');
-    feedback.hidden = false;
-    feedback.className = `feedback ${correct ? 'feedback--correct' : 'feedback--wrong'}`;
-    feedback.innerHTML = `
-      <div class="feedback__headline">${correct ? '✅ Correct!' : '❌ Not quite.'}</div>
-      <p>${quest.explanation}</p>
-      ${xpEarned ? `<div class="feedback__xp">+${xpEarned} XP</div>` : ''}
-    `;
-    document.getElementById('modal-actions').hidden = false;
-    document.getElementById('continue-btn').addEventListener('click', () => {
-      closeModal();
-      handlePostAnswerEffects();
-    });
-  }
-
-  function renderRewriteQuest(quest, isDaily) {
-    const cat = CATEGORIES.find((c) => c.id === quest.category);
     const body = document.getElementById('modal-body');
-    modalSetColor(cat.color);
     body.innerHTML = `
-      <p class="quest-scenario">${quest.task}</p>
-      <div class="starter-prompt">"${quest.starterPrompt}"</div>
-      <textarea id="rewrite-input" class="rewrite-input" rows="4" placeholder="Type your improved version here..."></textarea>
-      <div class="modal-actions">
-        <button class="btn btn--primary" id="submit-rewrite">Submit</button>
+      <div class="game-head"><h2>${cat.icon} Memory Match — Cleared!</h2></div>
+      <div class="feedback ${beatBolt ? 'feedback--correct' : 'feedback--wrong'}">
+        <div class="feedback__headline">${beatBolt ? '🎉 You beat BOLT!' : 'BOLT keeps this one'}</div>
+        <p>You cleared it in <strong>${moves} moves</strong> — BOLT's best here is ${BOLT.memoryBestMoves}.</p>
+        <p class="bolt-line">${pick(beatBolt ? BOLT.memoryWinPlayer : BOLT.memoryWinBolt)}</p>
+        ${xpEarned ? `<div class="feedback__xp">+${xpEarned} XP</div>` : ''}
       </div>
-      <div class="feedback" id="feedback" hidden></div>
-      <div class="modal-actions" id="modal-actions" hidden>
-        <button class="btn btn--secondary" id="retry-btn">Try Again for Practice</button>
+      <div class="modal-actions">
+        <button class="btn btn--secondary" id="replay-btn">Play Again</button>
         <button class="btn btn--primary" id="continue-btn">Continue</button>
       </div>
     `;
-    document.getElementById('submit-rewrite').addEventListener('click', () => {
-      const text = document.getElementById('rewrite-input').value.trim();
-      if (!text) return;
-      submitRewrite(quest, text);
-    });
-  }
-
-  function submitRewrite(quest, text) {
-    const { matched, ratio, score } = scoreRewrite(text, quest.hints);
-    const already = !!state.completed[quest.id];
-    let xpEarned = 0;
-    if (!already) {
-      xpEarned = Math.max(8, Math.round(quest.xp * Math.max(ratio, 0.15)));
-      state.completed[quest.id] = { xpEarned, score, attempts: 1 };
-      state.xp += xpEarned;
-    } else {
-      state.completed[quest.id].attempts++;
-    }
-    if (ratio >= REWRITE_PASS_RATIO) { soundCorrect(); state.correctStreak++; state.bestCorrectStreak = Math.max(state.bestCorrectStreak, state.correctStreak); }
-    else { soundWrong(); state.correctStreak = 0; }
+    document.getElementById('replay-btn').addEventListener('click', () => openMemoryGame(categoryId, false));
+    document.getElementById('continue-btn').addEventListener('click', () => { closeModal(); handleGameComplete(); });
 
     saveState();
     renderHeader();
     renderSkillMap();
-
-    document.getElementById('submit-rewrite').disabled = true;
-    document.getElementById('rewrite-input').disabled = true;
-
-    const hintList = quest.hints.map((h) => {
-      const hit = matched.includes(h);
-      return `<li class="${hit ? 'hint--hit' : 'hint--miss'}">${hit ? '✓' : '○'} ${h}</li>`;
-    }).join('');
-
-    const feedback = document.getElementById('feedback');
-    feedback.hidden = false;
-    feedback.className = `feedback ${score >= 60 ? 'feedback--correct' : 'feedback--wrong'}`;
-    feedback.innerHTML = `
-      <div class="feedback__headline">Coverage score: ${score}%</div>
-      <ul class="hint-list">${hintList}</ul>
-      <p>${quest.explanation}</p>
-      <details class="sample-answer">
-        <summary>See a strong example rewrite</summary>
-        <pre>${quest.sampleAnswer}</pre>
-      </details>
-      ${xpEarned ? `<div class="feedback__xp">+${xpEarned} XP</div>` : '<div class="feedback__xp">Practice round — no extra XP</div>'}
-    `;
-    document.getElementById('modal-actions').hidden = false;
-    document.getElementById('retry-btn').addEventListener('click', () => renderRewriteQuest(quest, false));
-    document.getElementById('continue-btn').addEventListener('click', () => {
-      closeModal();
-      handlePostAnswerEffects();
-    });
   }
 
-  function markDailyPlayed() {
-    const today = todayKey();
-    if (state.lastDailyDate === today) return;
-    if (state.lastDailyDate) {
-      const gap = daysBetween(state.lastDailyDate, today);
-      state.dailyStreak = gap === 1 ? state.dailyStreak + 1 : 1;
-    } else {
-      state.dailyStreak = 1;
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
     }
-    state.lastDailyDate = today;
+    return a;
   }
 
-  function handlePostAnswerEffects() {
+  // ================= PROMPT RACE =================
+
+  const RACE_ROUNDS = 4;
+  const RACE_BAR_MAX = 12;
+
+  function openRaceGame(categoryId, isDaily) {
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const scenario = RACE_SCENARIOS[categoryId];
+    document.querySelector('.modal__panel').style.setProperty('--cat-color', cat.color);
+
+    const raceState = {
+      pool: scenario.cards.map((c, i) => ({ ...c, id: i, used: false })),
+      round: 0,
+      playerScore: 0,
+      rivalScore: 0,
+      playerPicks: [],
+      intro: pick(BOLT.raceIntro),
+      lastReveal: null,
+      resolving: false,
+    };
+
+    function render() {
+      const body = document.getElementById('modal-body');
+      const available = raceState.pool.filter((c) => !c.used);
+      const playerPct = Math.min(100, (raceState.playerScore / RACE_BAR_MAX) * 100);
+      const rivalPct = Math.min(100, (raceState.rivalScore / RACE_BAR_MAX) * 100);
+      body.innerHTML = `
+        ${isDaily ? '<div class="daily-tag">⭐ Daily Challenge</div>' : ''}
+        <div class="game-head"><h2>${cat.icon} Prompt Race</h2><div class="game-stat">Round ${Math.min(raceState.round + 1, RACE_ROUNDS)} / ${RACE_ROUNDS}</div></div>
+        <p class="quest-scenario">${scenario.scenario}</p>
+        ${raceState.round === 0 && !raceState.lastReveal ? `<p class="bolt-line">${raceState.intro}</p>` : ''}
+
+        <div class="race-track">
+          <div class="race-lane">
+            <div class="race-lane__label">🧭 You — ${raceState.playerScore} pts</div>
+            <div class="race-lane__bar"><div class="race-lane__fill race-lane__fill--player" style="width:${playerPct}%"></div></div>
+          </div>
+          <div class="race-lane">
+            <div class="race-lane__label">${BOLT.icon} BOLT — ${raceState.rivalScore} pts</div>
+            <div class="race-lane__bar"><div class="race-lane__fill race-lane__fill--rival" style="width:${rivalPct}%"></div></div>
+          </div>
+        </div>
+
+        ${raceState.lastReveal ? `<div class="round-reveal">${raceState.lastReveal}</div>` : ''}
+
+        ${available.length > 0 ? `
+          <p class="race-prompt-label">Pick your next move:</p>
+          <div class="options" id="race-options"></div>
+        ` : ''}
+      `;
+      if (available.length > 0) {
+        const optionsEl = document.getElementById('race-options');
+        available.forEach((card) => {
+          const btn = document.createElement('button');
+          btn.className = 'option-btn';
+          btn.textContent = card.label;
+          btn.disabled = raceState.resolving;
+          btn.addEventListener('click', () => playerPicks(card.id));
+          optionsEl.appendChild(btn);
+        });
+      }
+    }
+
+    function playerPicks(cardId) {
+      if (raceState.resolving) return;
+      raceState.resolving = true;
+      const card = raceState.pool.find((c) => c.id === cardId);
+      card.used = true;
+      raceState.playerScore += card.points;
+      raceState.playerPicks.push(card);
+      raceState.lastReveal = `
+        <div class="round-reveal__row"><strong>You:</strong> ${card.label} <span class="round-reveal__pts">+${card.points}</span></div>
+        <div class="round-reveal__note">${card.note}</div>
+      `;
+      render();
+      soundGood();
+
+      setTimeout(() => {
+        const remaining = raceState.pool.filter((c) => !c.used);
+        if (remaining.length > 0) {
+          const weights = remaining.map((c) => Math.pow(4 - c.points, 2) + 1);
+          const total = weights.reduce((a, b) => a + b, 0);
+          let r = Math.random() * total;
+          let chosen = remaining[0];
+          for (let i = 0; i < remaining.length; i++) {
+            r -= weights[i];
+            if (r <= 0) { chosen = remaining[i]; break; }
+          }
+          chosen.used = true;
+          raceState.rivalScore += chosen.points;
+          const line = pick(chosen.points >= 2 ? BOLT.racePickGood : BOLT.racePickBad);
+          raceState.lastReveal += `
+            <div class="round-reveal__row"><strong>BOLT:</strong> ${chosen.label} <span class="round-reveal__pts">+${chosen.points}</span></div>
+            <div class="round-reveal__note bolt-line">${line}</div>
+          `;
+        }
+        raceState.round++;
+        raceState.resolving = false;
+        render();
+        if (raceState.pool.every((c) => c.used)) {
+          setTimeout(() => finishRace(categoryId, isDaily, raceState), 500);
+        }
+      }, BOLT_PICK_DELAY_MS);
+    }
+
+    render();
+    openModal();
+  }
+
+  function finishRace(categoryId, isDaily, raceState) {
+    const cat = CATEGORIES.find((c) => c.id === categoryId);
+    const won = raceState.playerScore > raceState.rivalScore;
+    const draw = raceState.playerScore === raceState.rivalScore;
+    const margin = raceState.playerScore - raceState.rivalScore;
+
+    let xpEarned = 0;
+    if (!state.raceXpGiven[categoryId]) {
+      xpEarned = 50 + (won ? 25 : 0);
+      if (isDaily) xpEarned += Math.round(xpEarned * 0.5);
+      state.raceXpGiven[categoryId] = true;
+      state.xp += xpEarned;
+    }
+    if (won) {
+      state.raceWon[categoryId] = true;
+      state.raceWinStreak++;
+      state.bestRaceWinStreak = Math.max(state.bestRaceWinStreak, state.raceWinStreak);
+      if (margin === 1) state.photoFinishAchieved = true;
+    } else if (!draw) {
+      state.raceWinStreak = 0;
+    }
+    state.gamesCompleted++;
+    if (isDaily) markDailyPlayed();
+
+    if (won) soundGood(); else soundBad();
+
+    const resultLine = won ? pick(BOLT.raceWinPlayer) : draw ? pick(BOLT.raceDraw) : pick(BOLT.raceWinBolt);
+    const headline = won ? '🏁 You win the race!' : draw ? '🤝 Dead heat' : 'BOLT crosses first';
+
+    const recap = raceState.playerPicks.map((c) => c.label).join(' · ');
+
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+      <div class="game-head"><h2>${cat.icon} Prompt Race — Final</h2></div>
+      <div class="feedback ${won ? 'feedback--correct' : 'feedback--wrong'}">
+        <div class="feedback__headline">${headline}</div>
+        <p>Final score: <strong>You ${raceState.playerScore} — BOLT ${raceState.rivalScore}</strong></p>
+        <p class="bolt-line">${resultLine}</p>
+        <div class="race-recap"><strong>Your assembled prompt used:</strong><br>${recap}</div>
+        ${xpEarned ? `<div class="feedback__xp">+${xpEarned} XP</div>` : ''}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn--secondary" id="replay-btn">Race Again</button>
+        <button class="btn btn--primary" id="continue-btn">Continue</button>
+      </div>
+    `;
+    document.getElementById('replay-btn').addEventListener('click', () => openRaceGame(categoryId, false));
+    document.getElementById('continue-btn').addEventListener('click', () => { closeModal(); handleGameComplete(); });
+
+    saveState();
+    renderHeader();
+    renderSkillMap();
+  }
+
+  // ---------- shared post-game effects ----------
+
+  function handleGameComplete() {
     const newBadges = checkBadges();
     saveState();
     renderHeader();
@@ -483,8 +586,6 @@
       }, i * 600);
     });
   }
-
-  // ---------- level-up detection ----------
 
   let lastKnownLevel = levelFromXp(state.xp);
   function checkLevelUp() {
@@ -516,16 +617,16 @@
   // ---------- stats tab ----------
 
   function renderStats() {
-    const totalQuests = QUESTS.length;
-    const done = Object.keys(state.completed).length;
+    const memDone = Object.keys(state.memoryCleared).length;
+    const raceDone = Object.keys(state.raceWon).length;
     const prog = levelProgress(state.xp);
     document.getElementById('stats-body').innerHTML = `
       <div class="stat-grid">
         <div class="stat-tile"><div class="stat-tile__value">${prog.level}</div><div class="stat-tile__label">Level</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${state.xp}</div><div class="stat-tile__label">Total XP</div></div>
-        <div class="stat-tile"><div class="stat-tile__value">${done} / ${totalQuests}</div><div class="stat-tile__label">Quests Mastered</div></div>
+        <div class="stat-tile"><div class="stat-tile__value">${memDone} / ${CATEGORIES.length}</div><div class="stat-tile__label">Decks Cleared</div></div>
+        <div class="stat-tile"><div class="stat-tile__value">${raceDone} / ${CATEGORIES.length}</div><div class="stat-tile__label">Races Won</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${state.dailyStreak}</div><div class="stat-tile__label">Daily Streak</div></div>
-        <div class="stat-tile"><div class="stat-tile__value">${state.bestCorrectStreak}</div><div class="stat-tile__label">Best Correct Streak</div></div>
         <div class="stat-tile"><div class="stat-tile__value">${state.badges.length} / ${BADGES.length}</div><div class="stat-tile__label">Badges</div></div>
       </div>
       <div class="stat-actions">
@@ -537,7 +638,7 @@
     document.getElementById('export-btn').addEventListener('click', exportProgress);
     document.getElementById('import-input').addEventListener('change', importProgress);
     document.getElementById('reset-btn').addEventListener('click', () => {
-      if (confirm('This will erase all XP, badges, and completed quests. Are you sure?')) {
+      if (confirm('This will erase all XP, badges, and progress. Are you sure?')) {
         state = defaultState();
         lastKnownLevel = 1;
         saveState();
@@ -550,11 +651,8 @@
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'claude-quest-progress.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = url; a.download = 'claude-quest-progress.json';
+    document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }
 
@@ -579,17 +677,8 @@
 
   // ---------- modal helpers ----------
 
-  function modalSetColor(color) {
-    document.querySelector('.modal__panel').style.setProperty('--cat-color', color);
-  }
-
-  function openModal() {
-    document.getElementById('modal').classList.add('modal--open');
-  }
-
-  function closeModal() {
-    document.getElementById('modal').classList.remove('modal--open');
-  }
+  function openModal() { document.getElementById('modal').classList.add('modal--open'); }
+  function closeModal() { document.getElementById('modal').classList.remove('modal--open'); }
 
   // ---------- tabs ----------
 
@@ -609,12 +698,8 @@
 
   function init() {
     document.getElementById('modal-close').addEventListener('click', closeModal);
-    document.getElementById('modal').addEventListener('click', (e) => {
-      if (e.target.id === 'modal') closeModal();
-    });
-    document.querySelectorAll('.tab-btn').forEach((btn) => {
-      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-    });
+    document.getElementById('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+    document.querySelectorAll('.tab-btn').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
     document.getElementById('sound-toggle').addEventListener('click', () => {
       state.soundOn = !state.soundOn;
       saveState();
@@ -622,14 +707,12 @@
     });
     document.getElementById('daily-btn').addEventListener('click', () => {
       if (state.lastDailyDate === todayKey()) {
-        showToast('Already completed today\'s challenge — come back tomorrow!', 'info');
+        showToast('Already raced today — come back tomorrow!', 'info');
         return;
       }
-      openQuest(dailyChallengeQuest().id, true);
+      openRaceGame(dailyCategory().id, true);
     });
 
-    // XP changes are applied synchronously in lockAnswer/submitRewrite; check for a
-    // level-up once the player dismisses the feedback panel via "Continue".
     document.addEventListener('click', (e) => {
       if (e.target && e.target.id === 'continue-btn') checkLevelUp();
     }, true);

@@ -180,7 +180,7 @@ body {
 .skill-card__desc { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 14px; min-height: 34px; }
 .skill-card__bar { height: 7px; background: var(--bg); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
 .skill-card__fill { height: 100%; background: var(--cat-color); transition: width 0.4s ease; }
-.skill-card__count { font-size: 0.75rem; color: var(--text-dim); font-weight: 700; }
+.skill-card__status { display: flex; justify-content: space-between; gap: 8px; font-size: 0.72rem; color: var(--text-dim); font-weight: 700; }
 
 /* ---------- achievements ---------- */
 
@@ -283,28 +283,35 @@ body {
 .cat-header h2 { margin: 0 0 4px; }
 .cat-header p { margin: 0; color: var(--text-dim); font-size: 0.85rem; }
 
-.quest-list { display: flex; flex-direction: column; gap: 8px; }
-.quest-row {
-  display: flex; align-items: center; gap: 10px;
+.daily-tag { font-weight: 800; color: var(--warn); margin-bottom: 10px; font-size: 0.85rem; }
+.quest-scenario { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 14px; }
+.bolt-line { color: var(--warn); font-style: italic; font-size: 0.85rem; }
+
+/* ---------- arena chooser ---------- */
+
+.arena-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+.arena-choice {
+  text-align: center;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  color: var(--text);
-  text-align: left;
-  font-family: inherit;
+  border-radius: var(--radius);
+  padding: 20px 14px;
   cursor: pointer;
-  font-size: 0.85rem;
+  color: var(--text);
+  font-family: inherit;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
-.quest-row:hover { border-color: var(--cat-color); }
-.quest-row--done { opacity: 0.75; }
-.quest-row__label { flex: 1; }
-.quest-row__xp { font-weight: 800; font-size: 0.75rem; color: var(--cat-color); white-space: nowrap; }
+.arena-choice:hover { transform: translateY(-3px); border-color: var(--cat-color); }
+.arena-choice__icon { font-size: 2rem; margin-bottom: 8px; }
+.arena-choice__name { font-weight: 800; font-size: 1rem; margin-bottom: 6px; }
+.arena-choice__desc { font-size: 0.78rem; color: var(--text-dim); min-height: 48px; }
+.arena-choice__status { margin-top: 10px; font-size: 0.72rem; font-weight: 700; color: var(--cat-color); }
 
-.daily-tag { font-weight: 800; color: var(--warn); margin-bottom: 10px; font-size: 0.85rem; }
+/* ---------- shared game chrome ---------- */
 
-.quest-scenario { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 6px; }
-.quest-question { margin: 0 0 16px; font-size: 1.05rem; }
+.game-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.game-head h2 { margin: 0; font-size: 1.1rem; }
+.game-stat { font-size: 0.8rem; color: var(--text-dim); font-weight: 700; }
 
 .options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 .option-btn {
@@ -320,32 +327,7 @@ body {
   transition: border-color 0.15s ease, transform 0.1s ease;
 }
 .option-btn:hover:not(:disabled) { border-color: var(--cat-color); transform: translateX(2px); }
-.option-btn:disabled { cursor: default; }
-.option-btn--correct { border-color: var(--good); background: rgba(34,197,94,0.12); }
-.option-btn--wrong { border-color: var(--bad); background: rgba(239,68,68,0.12); }
-
-.starter-prompt {
-  background: var(--panel);
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-style: italic;
-  color: var(--text-dim);
-  margin-bottom: 14px;
-}
-.rewrite-input {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  padding: 12px;
-  font-family: inherit;
-  font-size: 0.9rem;
-  resize: vertical;
-  margin-bottom: 12px;
-}
-.rewrite-input:focus { outline: 2px solid var(--accent); }
+.option-btn:disabled { cursor: default; opacity: 0.6; }
 
 .feedback { margin-top: 16px; padding: 14px; border-radius: 10px; font-size: 0.88rem; }
 .feedback--correct { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.4); }
@@ -353,15 +335,53 @@ body {
 .feedback__headline { font-weight: 800; margin-bottom: 6px; }
 .feedback__xp { margin-top: 8px; font-weight: 800; color: var(--warn); }
 
-.hint-list { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 4px; }
-.hint--hit { color: var(--good); }
-.hint--miss { color: var(--text-dim); }
-
-.sample-answer { margin-top: 10px; }
-.sample-answer summary { cursor: pointer; font-weight: 700; color: var(--accent); }
-.sample-answer pre { white-space: pre-wrap; background: var(--bg); padding: 10px; border-radius: 8px; margin-top: 8px; font-family: inherit; font-size: 0.82rem; }
-
 .modal-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+
+/* ---------- memory match ---------- */
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.memory-card {
+  aspect-ratio: 1 / 0.85;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.3;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px;
+  text-align: center;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.memory-card:hover:not(:disabled) { border-color: var(--cat-color); transform: translateY(-2px); }
+.memory-card__back { font-size: 1.4rem; opacity: 0.6; }
+.memory-card--open { background: var(--bg-alt); border-color: var(--cat-color); }
+.memory-card--matched { background: rgba(34,197,94,0.12); border-color: var(--good); color: var(--good); cursor: default; }
+
+/* ---------- prompt race ---------- */
+
+.race-track { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+.race-lane__label { font-size: 0.78rem; font-weight: 700; margin-bottom: 4px; }
+.race-lane__bar { height: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.race-lane__fill { height: 100%; border-radius: 999px; transition: width 0.5s ease; }
+.race-lane__fill--player { background: linear-gradient(90deg, var(--accent), #6366f1); }
+.race-lane__fill--rival { background: linear-gradient(90deg, var(--warn), var(--bad)); }
+
+.round-reveal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 0.85rem; }
+.round-reveal__row { margin-bottom: 2px; }
+.round-reveal__pts { color: var(--cat-color); font-weight: 800; margin-left: 4px; }
+.round-reveal__note { color: var(--text-dim); font-size: 0.78rem; margin-bottom: 8px; }
+.round-reveal__note:last-child { margin-bottom: 0; }
+
+.race-prompt-label { font-weight: 700; font-size: 0.82rem; margin: 0 0 8px; color: var(--text-dim); }
+.race-recap { margin-top: 10px; padding: 10px 12px; background: var(--panel); border-radius: 8px; font-size: 0.8rem; line-height: 1.5; }
 
 /* ---------- toasts ---------- */
 

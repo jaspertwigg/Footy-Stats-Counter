@@ -2,21 +2,24 @@
 
 A small, self-contained web game that gamifies getting better at working with Claude and Claude Code.
 
-Pick a skill tree, clear quests, and level up while actually learning real techniques —
-better prompting, Claude Code features (CLAUDE.md, plan mode, subagents, hooks), agentic
-workflow habits, context management, and a few advanced tricks.
+Pick a skill tree and play two mini-games against **BOLT**, a fast, overconfident rival
+who never reads the prompt properly. Beating BOLT means the technique actually stuck.
 
 ## How it plays
 
-- **Skill Map** — 5 categories, each a short set of quests: untimed multiple-choice
-  scenarios and "rewrite this prompt" exercises that are scored against a keyword
-  rubric and always show a strong example answer.
-- **XP & Levels** — clearing quests earns XP; leveling up triggers a title change and a
-  confetti burst.
-- **Daily Challenge** — one bonus-XP question per day, picked deterministically by date.
-  Playing on consecutive days builds a streak.
-- **Achievements** — badges for milestones like mastering a whole category, a 10-answer
-  correct streak, or a 7-day daily streak.
+- **Memory Match** — flip cards to pair each technique with the payoff it buys you
+  (e.g. "CLAUDE.md" ↔ "persistent project notes Claude reads every session"). No
+  timer — it's scored on moves, and you're racing BOLT's move count, not a clock.
+- **Prompt Race** — given a real scenario, draft technique cards one at a time against
+  BOLT. Good picks push your progress bar further than traps and filler do. After 4
+  rounds, whoever's further along wins — and you get a recap of the "prompt" your
+  picks assembled.
+- **XP & Levels** — clearing a deck or winning a race earns XP; leveling up triggers a
+  title change and a confetti burst.
+- **Daily Challenge** — one bonus-XP Prompt Race per day, category picked
+  deterministically by date. Playing on consecutive days builds a streak.
+- **Achievements** — badges for things like clearing every deck, beating BOLT everywhere,
+  a flawless memory run, winning by exactly 1 point, or a 3-race win streak.
 - **Stats** — totals, streaks, and buttons to export/import or reset your progress.
 
 Progress is saved to `localStorage` in your browser — nothing is sent anywhere.
@@ -33,5 +36,5 @@ No build step or dependencies. Either:
 
 - `index.html` — page structure
 - `styles.css` — theme and layout
-- `data.js` — quest content, categories, and badge definitions
-- `app.js` — game logic (state, scoring, leveling, rendering)
+- `data.js` — memory decks, race scenarios, BOLT's flavor text, and badge definitions
+- `app.js` — game logic (state, both mini-games, leveling, rendering)
