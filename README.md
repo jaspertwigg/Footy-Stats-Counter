@@ -22,89 +22,53 @@ An AI-assisted app for organizing and cooking from your recipes.
 
 ## Stack
 
-- `functions/` - a Firebase Cloud Function (Express + TypeScript) that talks to Firestore for
-  storage and to Claude (`@anthropic-ai/sdk`) for recipe extraction and editing via structured
-  outputs.
-- `web/` - React + TypeScript + Vite + Tailwind CSS frontend, served by Firebase Hosting.
-- `firebase.json` ties them together: Hosting serves the built frontend and rewrites `/api/**`
-  requests to the function, so the whole app is one Firebase project with one URL.
+- `server/` - Express + TypeScript API, Postgres storage (`pg`), Claude (`@anthropic-ai/sdk`) for
+  recipe extraction and editing via structured outputs.
+- `web/` - React + TypeScript + Vite + Tailwind CSS frontend.
 
-## Putting it online (so you can use it from your phone too)
+The server also serves the built frontend directly, so the whole app is one deployable service
+with one URL.
 
-This uses the same Firebase account/CLI flow as the footy stats app, with two differences worth
-knowing about:
+## Putting it online (so you can use it from your phone too), for free
 
-- **A new, separate Firebase project**, not the `footy-stats-counter` one - so this app's recipes
-  live in their own database rather than mixing into the footy stats one.
-- **This app has a real server piece** (the `functions/` Cloud Function), where footy stats had
-  none. That's not extra complexity for its own sake - it's because every recipe import/edit calls
-  the Anthropic API with a private key, and that key can never be shipped in client-side code (it'd
-  be sitting in plain sight for anyone to copy and rack up your bill). A Cloud Function is what
-  keeps it private. This is also why the **Blaze plan** below is required here but wasn't for footy
-  stats - Google only allows outbound network calls (like calling Anthropic) from Cloud Functions
-  on Blaze, not the free Spark plan.
+This needs two free accounts: one for a permanent little database (so your recipes don't
+disappear), and one to actually run the app and give it a web address. Both have free tiers with
+no card required.
 
-Also, a couple of Firebase console pages (especially anything involving billing/Blaze, or secrets)
-render awkwardly on a phone browser - if a page looks broken or you can't find a button that should
-be there, switch to "Request Desktop Website" in your mobile browser, or use a laptop for that one
-step.
-
-1. **Create a Firebase project** at [console.firebase.google.com](https://console.firebase.google.com)
-   (or `firebase projects:create` from the CLI).
-2. **Upgrade it to the Blaze (pay-as-you-go) plan.** This is required because the app calls the
-   Anthropic API from a Cloud Function, and Google only allows Cloud Functions to make outbound
-   network calls on Blaze. Firestore and Hosting stay free either way, and Blaze includes a
-   generous free-usage tier - a personal recipe app won't come close to real charges.
-3. From the repo root, log in and point the CLI at your new project:
-   ```bash
-   npx firebase-tools login
-   npx firebase-tools use --add
-   ```
-   (pick the project you just created; this writes a local `.firebaserc`, which is gitignored)
-4. Set your Anthropic API key as a Cloud Functions secret:
-   ```bash
-   npx firebase-tools functions:secrets:set ANTHROPIC_API_KEY
-   ```
-   (paste your key when prompted)
-5. Build and deploy everything:
-   ```bash
-   npm run install:all
-   npm run deploy
-   ```
-6. When it finishes, the CLI prints your **Hosting URL** (something like
-   `https://home-kitchen-xxxxx.web.app`) - that's your app, reachable from any device.
-7. On your phone, open that URL in the browser, then use the browser's "Add to Home Screen" (or
+1. **Database - [neon.com](https://neon.com)**: sign up free, create a project, and copy the
+   "connection string" it gives you (starts with `postgresql://`).
+2. **Hosting - [render.com](https://render.com)**: sign up free, click **New +** → **Blueprint**,
+   connect this GitHub repo, and pick this branch. Render will read `render.yaml` in this repo and
+   set itself up automatically. When it asks for environment variables, add:
+   - `ANTHROPIC_API_KEY` - your Anthropic API key
+   - `DATABASE_URL` - the connection string from Neon
+3. Click deploy and wait a few minutes. Render gives you a URL like
+   `https://home-kitchen.onrender.com` - that's your app, reachable from any device.
+4. On your phone, open that URL in the browser, then use the browser's "Add to Home Screen" (or
    "Install app") option to get an app icon on your home screen.
 
-To push a later update, just run `npm run deploy` again.
+Note: the free Render plan puts the app to sleep after 15 minutes of no visits, so the first open
+after a while takes ~30-60 seconds to wake up - your data is safe either way since it lives in Neon,
+not on the server itself.
 
-## Running it locally (Firebase emulators)
+## Running it on your own computer instead
 
-Requires Node.js 20+ and the Firebase CLI (`npx firebase-tools`, no separate install needed).
+Requires Node.js 20+ and a Postgres database (a free [neon.com](https://neon.com) one works fine
+here too, or a local Postgres install).
 
 ```bash
 npm run install:all
-npx firebase-tools login
-npx firebase-tools use --add   # link to your Firebase project (or a throwaway one for testing)
-
-# optional, only needed to test import/edit locally against the real Claude API:
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > functions/.secret.local
-
-npm run emulate
+cp server/.env.example server/.env
+# edit server/.env and set ANTHROPIC_API_KEY and DATABASE_URL
+npm run dev
 ```
 
-This builds everything and starts the Firebase Emulator Suite - open **http://localhost:5000** for
-the full app (frontend + API + a local Firestore, all emulated, nothing deployed). The Emulator UI
-at **http://localhost:4000** lets you inspect stored recipes.
-
-For fast frontend-only iteration with hot reload, run `npm run emulate` in one terminal and
-`npm run dev` in another - the Vite dev server on port 5173 proxies `/api` to the emulators.
+This starts the API on `http://localhost:8787` and the web app on `http://localhost:5173` (which
+proxies `/api` requests to the server). Open `http://localhost:5173` in your browser.
 
 ## Notes & limitations
 
-- This is a single-user, local-first style app with no accounts/login. Firestore security rules
-  deny all direct client access - the frontend only ever talks to Firestore through the Cloud
-  Function.
+- This is a single-user, local-first style app with no accounts/login.
 - Importing from a link works well for recipe blogs and most articles. Heavily gated social
   platforms (Instagram, TikTok, Facebook) often block automated fetching entirely - if a link
   import fails, paste the caption or recipe text directly using the "Paste text" tab instead.
@@ -116,6 +80,8 @@ For fast frontend-only iteration with hot reload, run `npm run emulate` in one t
   banana/butter densities) rather than a fixed conversion table, so results are estimates - always
   a good idea to sanity-check quantities for anything sensitive to precision (baking chemistry,
   etc).
-- The deployed Cloud Function spins down when idle, like most pay-as-you-go serverless functions,
-  so the first request after a quiet period takes a couple of seconds longer while it wakes up -
-  your data is unaffected either way, since it lives in Firestore, not in the function itself.
+- This app started out on Firebase, matching the footy stats app's account/tooling - but unlike
+  footy stats, every recipe import/edit calls the Anthropic API with a private key, and Google only
+  allows a Cloud Function to make that kind of outbound call on Firebase's paid Blaze plan. Render +
+  Neon (above) gets the same result - a real server that keeps the API key private - without
+  needing a card on file, so that's what this app uses instead.
