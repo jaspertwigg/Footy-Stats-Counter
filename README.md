@@ -14,31 +14,48 @@ An AI-assisted app for organizing and cooking from your recipes.
   - "Use grams for butter instead of tablespoons"
   - Any other edit - swap an ingredient, change a technique, adjust serving size, etc.
 - Full history of changes per recipe, with one-click undo or revert to the original import.
+- Installable to a phone's home screen like a regular app (it's a website under the hood, so no
+  app store needed).
 
 ## Stack
 
-- `server/` - Express + TypeScript API, SQLite storage (`better-sqlite3`), Claude (`@anthropic-ai/sdk`)
-  for recipe extraction and editing via structured outputs.
+- `server/` - Express + TypeScript API, Postgres storage (`pg`), Claude (`@anthropic-ai/sdk`) for
+  recipe extraction and editing via structured outputs.
 - `web/` - React + TypeScript + Vite + Tailwind CSS frontend.
 
-## Setup
+The server also serves the built frontend directly, so the whole app is one deployable service
+with one URL.
 
-Requires Node.js 20+.
+## Putting it online (so you can use it from your phone too)
+
+This needs two free accounts: one for a permanent little database (so your recipes don't
+disappear), and one to actually run the app and give it a web address.
+
+1. **Database - [neon.com](https://neon.com)**: sign up free, create a project, and copy the
+   "connection string" it gives you (starts with `postgresql://`).
+2. **Hosting - [render.com](https://render.com)**: sign up free, click **New +** → **Blueprint**,
+   connect this GitHub repo, and pick this branch. Render will read `render.yaml` in this repo and
+   set itself up automatically. When it asks for environment variables, add:
+   - `ANTHROPIC_API_KEY` - your Anthropic API key
+   - `DATABASE_URL` - the connection string from Neon
+3. Click deploy and wait a few minutes. Render gives you a URL like
+   `https://home-kitchen.onrender.com` - that's your app, reachable from any device.
+4. On your phone, open that URL in the browser, then use the browser's "Add to Home Screen" (or
+   "Install app") option to get an app icon on your home screen.
+
+Note: the free Render plan puts the app to sleep after 15 minutes of no visits, so the first open
+after a while takes ~30-60 seconds to wake up - your data is safe either way since it lives in Neon,
+not on the server itself.
+
+## Running it on your own computer instead
+
+Requires Node.js 20+ and a Postgres database (a free [neon.com](https://neon.com) one works fine
+here too, or a local Postgres install).
 
 ```bash
 npm run install:all
-```
-
-Then add your Anthropic API key:
-
-```bash
 cp server/.env.example server/.env
-# edit server/.env and set ANTHROPIC_API_KEY=sk-ant-...
-```
-
-## Run it
-
-```bash
+# edit server/.env and set ANTHROPIC_API_KEY and DATABASE_URL
 npm run dev
 ```
 
@@ -47,8 +64,7 @@ proxies `/api` requests to the server). Open `http://localhost:5173` in your bro
 
 ## Notes & limitations
 
-- Recipes are stored locally in a SQLite file at `server/data/recipes.db` - this is a single-user,
-  local-first app with no accounts.
+- This is a single-user, local-first style app with no accounts/login.
 - Importing from a link works well for recipe blogs and most articles. Heavily gated social
   platforms (Instagram, TikTok, Facebook) often block automated fetching entirely - if a link
   import fails, paste the caption or recipe text directly using the "Paste text" tab instead.

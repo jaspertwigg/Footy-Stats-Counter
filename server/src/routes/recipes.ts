@@ -16,22 +16,38 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 
 
 export const recipesRouter = Router();
 
-recipesRouter.get("/", (_req, res) => {
-  res.json(listRecipes());
+recipesRouter.get("/", async (_req, res) => {
+  try {
+    res.json(await listRecipes());
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
-recipesRouter.get("/:id", (req, res) => {
-  const record = getRecipe(req.params.id);
-  if (!record) return res.status(404).json({ error: "Recipe not found" });
-  res.json(record);
+recipesRouter.get("/:id", async (req, res) => {
+  try {
+    const record = await getRecipe(req.params.id);
+    if (!record) return res.status(404).json({ error: "Recipe not found" });
+    res.json(record);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
-recipesRouter.delete("/:id", (req, res) => {
-  deleteRecipe(req.params.id);
-  res.status(204).end();
+recipesRouter.delete("/:id", async (req, res) => {
+  try {
+    await deleteRecipe(req.params.id);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
-function saveNewRecipe(sourceType: RecipeRecord["sourceType"], sourceRef: string | null, recipe: RecipeRecord["current"]) {
+async function saveNewRecipe(
+  sourceType: RecipeRecord["sourceType"],
+  sourceRef: string | null,
+  recipe: RecipeRecord["current"],
+) {
   const now = new Date().toISOString();
   const record: RecipeRecord = {
     id: nanoid(10),
@@ -43,7 +59,7 @@ function saveNewRecipe(sourceType: RecipeRecord["sourceType"], sourceRef: string
     current: recipe,
     history: [],
   };
-  insertRecipe(record);
+  await insertRecipe(record);
   return record;
 }
 
@@ -52,7 +68,7 @@ recipesRouter.post("/import/text", async (req, res) => {
     const { text } = req.body as { text?: string };
     if (!text || !text.trim()) return res.status(400).json({ error: "Missing 'text'" });
     const recipe = await importRecipeFromText(text);
-    res.status(201).json(saveNewRecipe("text", null, recipe));
+    res.status(201).json(await saveNewRecipe("text", null, recipe));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -88,7 +104,7 @@ recipesRouter.post("/import/url", async (req, res) => {
     }
 
     const recipe = await importRecipeFromUrl(url, pageText);
-    res.status(201).json(saveNewRecipe("url", url, recipe));
+    res.status(201).json(await saveNewRecipe("url", url, recipe));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -106,7 +122,7 @@ recipesRouter.post("/import/photo", upload.array("images", 6), async (req, res) 
     const extraContext = (req.body?.context as string | undefined) || undefined;
 
     const recipe = await importRecipeFromImages(images, extraContext);
-    res.status(201).json(saveNewRecipe("photo", `${files.length} photo(s)`, recipe));
+    res.status(201).json(await saveNewRecipe("photo", `${files.length} photo(s)`, recipe));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -114,31 +130,38 @@ recipesRouter.post("/import/photo", upload.array("images", 6), async (req, res) 
 
 recipesRouter.post("/:id/edit", async (req, res) => {
   try {
-    const record = getRecipe(req.params.id);
+    const record = await getRecipe(req.params.id);
     if (!record) return res.status(404).json({ error: "Recipe not found" });
 
     const { instruction } = req.body as { instruction?: string };
     if (!instruction || !instruction.trim()) return res.status(400).json({ error: "Missing 'instruction'" });
 
     const result = await editRecipe(record.current, instruction);
-    const history = [...record.history, { recipe: record.current, changeSummary: result.changeSummary, at: new Date().toISOString() }];
-    const updated = updateRecipeCurrent(record.id, result.recipe, history);
+    const history = [
+      ...record.history,
+      { recipe: record.current, changeSummary: result.changeSummary, at: new Date().toISOString() },
+    ];
+    const updated = await updateRecipeCurrent(record.id, result.recipe, history);
     res.json({ record: updated, changeSummary: result.changeSummary });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-recipesRouter.post("/:id/revert", (req, res) => {
-  const record = getRecipe(req.params.id);
-  if (!record) return res.status(404).json({ error: "Recipe not found" });
+recipesRouter.post("/:id/revert", async (req, res) => {
+  try {
+    const record = await getRecipe(req.params.id);
+    if (!record) return res.status(404).json({ error: "Recipe not found" });
 
-  const { to } = req.body as { to?: "original" | "previous" };
-  if (to === "previous" && record.history.length > 0) {
-    const prevEntry = record.history[record.history.length - 1];
-    const updated = updateRecipeCurrent(record.id, prevEntry.recipe, record.history.slice(0, -1));
-    return res.json(updated);
+    const { to } = req.body as { to?: "original" | "previous" };
+    if (to === "previous" && record.history.length > 0) {
+      const prevEntry = record.history[record.history.length - 1];
+      const updated = await updateRecipeCurrent(record.id, prevEntry.recipe, record.history.slice(0, -1));
+      return res.json(updated);
+    }
+    const updated = await updateRecipeCurrent(record.id, record.original, []);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
-  const updated = updateRecipeCurrent(record.id, record.original, []);
-  res.json(updated);
 });

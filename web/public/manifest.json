@@ -1,0 +1,12 @@
+{
+  "name": "Home Kitchen",
+  "short_name": "Home Kitchen",
+  "description": "Import, view, and adjust your recipes",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdfaf6",
+  "theme_color": "#ea580c",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
