@@ -16,6 +16,9 @@ An AI-assisted app for organizing and cooking from your recipes.
 - Full history of changes per recipe, with one-click undo or revert to the original import.
 - Installable to a phone's home screen like a regular app (it's a website under the hood, so no
   app store needed).
+- If the connection drops (spotty kitchen wifi), the app falls back to the last copy of your
+  recipes it saved in the browser so you're not staring at a blank screen mid-cook - requesting new
+  changes still needs a connection, but viewing what you've already got doesn't.
 
 ## Stack
 
@@ -28,8 +31,23 @@ An AI-assisted app for organizing and cooking from your recipes.
 
 ## Putting it online (so you can use it from your phone too)
 
-This uses the same Firebase account/CLI flow as the footy stats app - just a new project so the
-two apps' data stay separate.
+This uses the same Firebase account/CLI flow as the footy stats app, with two differences worth
+knowing about:
+
+- **A new, separate Firebase project**, not the `footy-stats-counter` one - so this app's recipes
+  live in their own database rather than mixing into the footy stats one.
+- **This app has a real server piece** (the `functions/` Cloud Function), where footy stats had
+  none. That's not extra complexity for its own sake - it's because every recipe import/edit calls
+  the Anthropic API with a private key, and that key can never be shipped in client-side code (it'd
+  be sitting in plain sight for anyone to copy and rack up your bill). A Cloud Function is what
+  keeps it private. This is also why the **Blaze plan** below is required here but wasn't for footy
+  stats - Google only allows outbound network calls (like calling Anthropic) from Cloud Functions
+  on Blaze, not the free Spark plan.
+
+Also, a couple of Firebase console pages (especially anything involving billing/Blaze, or secrets)
+render awkwardly on a phone browser - if a page looks broken or you can't find a button that should
+be there, switch to "Request Desktop Website" in your mobile browser, or use a laptop for that one
+step.
 
 1. **Create a Firebase project** at [console.firebase.google.com](https://console.firebase.google.com)
    (or `firebase projects:create` from the CLI).

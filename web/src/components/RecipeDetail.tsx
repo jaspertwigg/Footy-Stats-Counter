@@ -12,6 +12,7 @@ export default function RecipeDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [record, setRecord] = useState<RecipeRecord | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("standard");
   const [error, setError] = useState<string | null>(null);
   const [editLoading, setEditLoading] = useState(false);
@@ -22,7 +23,10 @@ export default function RecipeDetail() {
     if (!id) return;
     api
       .getRecipe(id)
-      .then(setRecord)
+      .then(({ data, fromCache }) => {
+        setRecord(data);
+        setFromCache(fromCache);
+      })
       .catch((e) => setError(e.message));
   }, [id]);
 
@@ -35,6 +39,7 @@ export default function RecipeDetail() {
       const result = await api.editRecipe(id, instruction);
       setRecord(result.record);
       setChangeSummary(result.changeSummary);
+      setFromCache(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -49,6 +54,7 @@ export default function RecipeDetail() {
     try {
       const updated = await api.revert(id, to);
       setRecord(updated);
+      setFromCache(false);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -89,6 +95,12 @@ export default function RecipeDetail() {
         ))}
       </div>
 
+      {fromCache && (
+        <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2">
+          Couldn't reach the server - showing your last saved copy. Requesting changes needs a
+          connection.
+        </div>
+      )}
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">
           {error}

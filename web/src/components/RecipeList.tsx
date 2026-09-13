@@ -5,12 +5,16 @@ import type { RecipeRecord } from "../types";
 
 export default function RecipeList() {
   const [recipes, setRecipes] = useState<RecipeRecord[] | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .listRecipes()
-      .then(setRecipes)
+      .then(({ data, fromCache }) => {
+        setRecipes(data);
+        setFromCache(fromCache);
+      })
       .catch((e) => setError(e.message));
   }, []);
 
@@ -32,24 +36,31 @@ export default function RecipeList() {
   }
 
   return (
-    <div className="grid sm:grid-cols-2 gap-4">
-      {recipes.map((r) => (
-        <Link
-          key={r.id}
-          to={`/recipes/${r.id}`}
-          className="block rounded-xl border border-orange-100 bg-white p-4 hover:shadow-md hover:border-orange-200 transition-all"
-        >
-          <h2 className="font-semibold text-stone-900 mb-1">{r.current.title}</h2>
-          <p className="text-sm text-stone-500 line-clamp-2 mb-2">{r.current.description}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {r.current.tags.slice(0, 4).map((t) => (
-              <span key={t} className="text-xs bg-orange-50 text-orange-700 rounded-full px-2 py-0.5">
-                {t}
-              </span>
-            ))}
-          </div>
-        </Link>
-      ))}
+    <div>
+      {fromCache && (
+        <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2">
+          Couldn't reach the server - showing your last saved copy of these recipes.
+        </div>
+      )}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {recipes.map((r) => (
+          <Link
+            key={r.id}
+            to={`/recipes/${r.id}`}
+            className="block rounded-xl border border-orange-100 bg-white p-4 hover:shadow-md hover:border-orange-200 transition-all"
+          >
+            <h2 className="font-semibold text-stone-900 mb-1">{r.current.title}</h2>
+            <p className="text-sm text-stone-500 line-clamp-2 mb-2">{r.current.description}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {r.current.tags.slice(0, 4).map((t) => (
+                <span key={t} className="text-xs bg-orange-50 text-orange-700 rounded-full px-2 py-0.5">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
