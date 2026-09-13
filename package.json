@@ -4,12 +4,11 @@
   "private": true,
   "description": "AI-assisted cooking & baking recipe app",
   "scripts": {
-    "dev": "concurrently -n server,web -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix web\"",
-    "install:all": "npm install --prefix server && npm install --prefix web",
-    "build": "npm run build --prefix server && npm run build --prefix web",
-    "typecheck": "npm run typecheck --prefix server"
-  },
-  "devDependencies": {
-    "concurrently": "^10.0.5"
+    "dev": "npm run dev --prefix web",
+    "install:all": "npm install --prefix functions && npm install --prefix web",
+    "build": "npm run build --prefix functions && npm run build --prefix web",
+    "typecheck": "npm run typecheck --prefix functions",
+    "emulate": "npm run build && npx firebase-tools emulators:start",
+    "deploy": "npm run build && npx firebase-tools deploy"
   }
 }
