@@ -2,9 +2,13 @@
 
 Turn a pattern exported from a leathercraft CAD program (DXF, SVG, or
 LeathercraftCAD's native `.lcc`) into a print-ready PDF at **exact,
-true-to-life scale**. If the pattern is bigger than a sheet of paper, it's
-automatically split across multiple pages with overlapping registration
-marks so you can trim and tape them back together at the right size.
+true-to-life scale**. A CAD file is usually a whole layout with several
+separate pattern pieces on one canvas, so this first works out where each
+piece actually begins and ends: pieces small enough for one page are packed
+onto pages whole and are **never split**; only a piece that's genuinely too
+big for a single sheet gets tiled across multiple pages, with overlapping
+registration marks so you can trim and tape it back together at the right
+size.
 
 ## Why not just "print to PDF" from the CAD program?
 
@@ -32,13 +36,23 @@ python make_pdf.py path/to/pattern.svg -o wallet.pdf
 python make_pdf.py path/to/project.lcc
 ```
 
-By default it writes next to the input file with a `.pdf` extension, tiles
-onto A4 with a 10mm margin and 15mm overlap between pages. Try it on the
-bundled examples:
+By default it writes next to the input file with a `.pdf` extension, targets
+A4 with a 10mm margin, and (for any piece too big to fit whole) tiles with a
+15mm overlap between pages. It prints a summary of what it found:
+
+```
+Overall canvas size: 235.0mm x 473.3mm
+Found 8 separate piece(s) in the pattern.
+6 piece(s) fit on a page whole and were packed onto 2 page(s) without being split.
+2 piece(s) too large for one page, tiled individually with 15.0mm overlap: piece 2 (222x86mm) -> 1x2 pages; piece 1 (235x86mm) -> 1x2 pages
+Wrote wallet.pdf (6 page(s) total)
+```
+
+Try it on the bundled examples:
 
 ```bash
-python make_pdf.py examples/simple_panel.dxf      # fits on one page
-python make_pdf.py examples/large_bag_panel.dxf   # 500x350mm -> tiled across 6 A4 pages
+python make_pdf.py examples/simple_panel.dxf      # one piece, fits on one page
+python make_pdf.py examples/large_bag_panel.dxf   # one 500x350mm piece -> tiled across 6 A4 pages
 ```
 
 ### Options
@@ -78,27 +92,58 @@ control, so it defends against both:
    actual ruler before cutting any leather. If it doesn't measure 50mm, redo
    the print with scaling disabled.
 
-## How tiling works
+## How piece detection works
 
-When a pattern is larger than one page's printable area, it's split into a
-grid of tiles. Each tile is rendered as its own full page, clipped to its
-own rectangle, with:
+A CAD file is just geometry on a canvas — nothing in DXF, SVG, or `.lcc`
+says "these lines are one cuttable piece." That grouping is worked out by
+tracing connectivity: lines that share an endpoint are chained into the
+same piece (this is how separate `.lcc` `LINE` segments get rebuilt into
+outlines, pulling in touching fold-mark ticks along the way), and a small
+closed shape sitting entirely inside another one's outline — a stitch hole,
+a punch mark — is folded into that piece even though it never touches it.
 
-- **Registration crosshairs** on a fixed 50mm grid, anchored to the
-  pattern's own coordinates (not to each page). Because neighbouring tiles
-  both include the overlap strip between them, they print the *same*
-  crosshairs at the *same* physical spot — line them up (e.g. against a
-  window or on a light table) and the pages are correctly aligned by
-  construction, not by eye.
+This is deliberately conservative: two pieces are only ever merged when
+they clearly belong together (shared vertices, or full containment), never
+merged just for being nearby, since that's what real efficient nesting
+layouts look like (unrelated pieces slotted right next to or even
+overlapping each other's bounding box). The trade-off is a construction
+line that merely *crosses* a piece's outline without touching a shared
+vertex or being fully enclosed by it won't be detected as belonging to that
+piece, and will show up as its own tiny separate piece instead. This
+hasn't come up in real `.lcc` files tested so far — construction marks
+there are attached at real vertices — but if the piece count the tool
+reports looks higher than the actual number of parts in your pattern,
+that's the likely cause; let us know and we can extend the detection.
+
+## How pages are laid out
+
+Once pieces are known, each one is either **packed** (if it fits on one
+page) or **tiled** (if it's too big for any single page) — never both, and
+a packed piece is never split.
+
+**Packed pages** hold one or more whole pieces, placed edge to edge to use
+paper efficiently. Pieces are never rotated to pack tighter, since leather
+has a grain direction and a pattern piece's orientation usually matters.
+Each piece gets a small label (e.g. `piece 3/8`) printed at its corner so
+you can match it back to the terminal summary.
+
+**Tiled pages** are used only for a piece too big for one sheet. Each tile
+is its own full page, clipped to its own rectangle, with:
+
+- **Registration crosshairs** on a fixed 50mm grid, anchored to the piece's
+  own coordinates (not to each page). Because neighbouring tiles both
+  include the overlap strip between them, they print the *same* crosshairs
+  at the *same* physical spot — line them up (e.g. against a window or on a
+  light table) and the pages are correctly aligned by construction, not by
+  eye.
 - **Crop marks** at the corners of the printable area, so you know where to
   trim before taping pages together.
-- **A footer** naming the page number, its row/column in the tile grid, and
-  a reminder to print at 100%.
 - **A small position diagram** in the corner showing which tile you're
-  holding, for patterns split into more than one page.
+  holding.
 
-Cut along the crop marks, overlap adjacent sheets so the crosshairs line up
-exactly, then tape.
+Every page — packed or tiled — has a footer naming what's on it and a
+reminder to print at 100%. Cut along the crop marks, overlap adjacent
+tiled sheets so the crosshairs line up exactly, then tape.
 
 ## Supported input
 

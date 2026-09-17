@@ -4,8 +4,10 @@ import argparse
 import sys
 
 from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox
-from .layout import PAGE_SIZES_MM, compute_tiles, needs_tiling
-from .render import draw_pdf
+from .layout import PAGE_SIZES_MM, compute_tiles
+from .packing import pack_pieces
+from .pieces import group_into_pieces
+from .render import PackedPageJob, TilePageJob, draw_pdf
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -119,21 +121,54 @@ def main(argv=None) -> int:
     bbox = polyline_bbox(polylines)
     minx, miny, maxx, maxy = bbox
     width, height = maxx - minx, maxy - miny
-    print(f"Pattern size: {width:.1f}mm x {height:.1f}mm", file=sys.stderr)
+    print(f"Overall canvas size: {width:.1f}mm x {height:.1f}mm", file=sys.stderr)
 
-    tiles = compute_tiles(bbox, page_size, args.margin_mm, args.overlap_mm)
-    if needs_tiling(bbox, page_size, args.margin_mm):
+    pieces = group_into_pieces(polylines)
+    print(f"Found {len(pieces)} separate piece(s) in the pattern.", file=sys.stderr)
+
+    packed_pages, oversized = pack_pieces(pieces, page_size, args.margin_mm)
+
+    # Number pieces in reading order (top-to-bottom, left-to-right on the
+    # original canvas) so terminal output and on-page labels agree with how
+    # someone would naturally scan the original CAD layout.
+    ordered = sorted(pieces, key=lambda p: (-p.bbox[3], p.bbox[0]))
+    piece_number = {id(p): i + 1 for i, p in enumerate(ordered)}
+    total_pieces = len(pieces)
+
+    pages = []
+    for packed_page in packed_pages:
+        placements = []
+        for piece, ox, oy in packed_page.placements:
+            label = f"piece {piece_number[id(piece)]}/{total_pieces}"
+            placements.append((piece.polylines, ox, oy, label))
+        pages.append(PackedPageJob(placements=placements))
+
+    tiling_summary = []
+    for piece in oversized:
+        num = piece_number[id(piece)]
+        pw, ph = piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1]
+        tiles = compute_tiles(piece.bbox, page_size, args.margin_mm, args.overlap_mm)
+        label = f"piece {num}/{total_pieces} ({pw:.0f}x{ph:.0f}mm)"
+        for tile in tiles:
+            pages.append(TilePageJob(polylines=piece.polylines, tile=tile, piece_label=label))
+        tiling_summary.append(f"piece {num} ({pw:.0f}x{ph:.0f}mm) -> {tiles[-1].rows}x{tiles[-1].cols} pages")
+
+    if packed_pages:
+        fit_count = total_pieces - len(oversized)
         print(
-            f"Pattern is larger than one {args.page_size} page: tiling across "
-            f"{tiles[-1].rows} x {tiles[-1].cols} pages ({len(tiles)} total) "
-            f"with {args.overlap_mm}mm overlap.",
+            f"{fit_count} piece(s) fit on a page whole and were packed onto "
+            f"{len(packed_pages)} page(s) without being split.",
             file=sys.stderr,
         )
-    else:
-        print("Pattern fits on a single page -- no tiling needed.", file=sys.stderr)
+    if oversized:
+        print(
+            f"{len(oversized)} piece(s) too large for one page, tiled individually "
+            f"with {args.overlap_mm}mm overlap: " + "; ".join(tiling_summary),
+            file=sys.stderr,
+        )
 
-    draw_pdf(output, polylines, tiles, page_size, args.margin_mm, args.input, unit_note)
-    print(f"Wrote {output}", file=sys.stderr)
+    draw_pdf(output, pages, page_size, args.margin_mm, args.input, unit_note)
+    print(f"Wrote {output} ({len(pages)} page(s) total)", file=sys.stderr)
     return 0
 
 
