@@ -38,21 +38,27 @@ python make_pdf.py path/to/project.lcc
 
 By default it writes next to the input file with a `.pdf` extension, targets
 A4 with a 10mm margin, and (for any piece too big to fit whole) tiles with a
-15mm overlap between pages. It prints a summary of what it found:
+15mm overlap between pages. Page orientation defaults to `auto`: it tries
+both portrait and landscape and picks whichever splits fewer pieces across
+pages (ties go to portrait), since a piece that's too wide for portrait
+often fits landscape without being touched at all. It prints a summary of
+what it found and decided:
 
 ```
 Overall canvas size: 235.0mm x 473.3mm
 Found 8 separate piece(s) in the pattern.
-6 piece(s) fit on a page whole and were packed onto 2 page(s) without being split.
-2 piece(s) too large for one page, tiled individually with 15.0mm overlap: piece 2 (222x86mm) -> 1x2 pages; piece 1 (235x86mm) -> 1x2 pages
-Wrote wallet.pdf (6 page(s) total)
+Orientation: landscape (0 oversized piece(s), 3 page(s) total) beats portrait (2 oversized, 6 pages) -- using landscape.
+8 piece(s) fit on a page whole and were packed onto 3 page(s) without being split.
+Wrote wallet.pdf (3 page(s) total)
 ```
+
+Force a specific orientation with `--orientation portrait` / `--orientation landscape` if you have a reason to (e.g. matching how you'll organize printed sheets); `auto` is almost always the better choice.
 
 Try it on the bundled examples:
 
 ```bash
 python make_pdf.py examples/simple_panel.dxf      # one piece, fits on one page
-python make_pdf.py examples/large_bag_panel.dxf   # one 500x350mm piece -> tiled across 6 A4 pages
+python make_pdf.py examples/large_bag_panel.dxf   # one 500x350mm piece -> tiled across 4 A4 pages (landscape)
 ```
 
 ### Options
@@ -61,6 +67,7 @@ python make_pdf.py examples/large_bag_panel.dxf   # one 500x350mm piece -> tiled
 |---|---|---|
 | `-o, --output` | `<input>.pdf` | Output PDF path |
 | `--page-size` | `A4` | `A4`, `LETTER`, or `A3` |
+| `--orientation` | `auto` | `auto`, `portrait`, or `landscape` -- `auto` picks whichever splits fewer pieces |
 | `--margin-mm` | `10` | Non-printable border on every page |
 | `--overlap-mm` | `15` | Overlap between tiles, for taping alignment |
 | `--tolerance-mm` | `0.1` | How finely curves/arcs are flattened to line segments |

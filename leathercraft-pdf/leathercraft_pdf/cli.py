@@ -26,6 +26,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--page-size", default="A4", choices=sorted(PAGE_SIZES_MM.keys()),
         help="Paper size to tile onto (default: A4)",
     )
+    p.add_argument(
+        "--orientation", default="auto", choices=["auto", "portrait", "landscape"],
+        help=(
+            "Page orientation. 'auto' (default) tries both portrait and "
+            "landscape and picks whichever splits fewer pieces across pages "
+            "(ties broken by total page count)."
+        ),
+    )
     p.add_argument("--margin-mm", type=float, default=10.0, help="Page margin in mm (default: 10)")
     p.add_argument(
         "--overlap-mm", type=float, default=15.0,
@@ -48,6 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Assumed pixels-per-inch for SVGs with no physical width/height (default: 96)",
     )
     return p
+
+
+def _plan(pieces, page_size_mm, margin_mm, overlap_mm):
+    """Pack+tile `pieces` onto `page_size_mm` and return a comparable plan.
+
+    Returns (packed_pages, oversized_with_tiles, total_pages) where
+    oversized_with_tiles is a list of (piece, tiles) for pieces that didn't
+    fit whole. Used both to score a candidate orientation and, for the
+    winner, to actually build the output pages.
+    """
+    packed_pages, oversized = pack_pieces(pieces, page_size_mm, margin_mm)
+    oversized_with_tiles = [
+        (piece, compute_tiles(piece.bbox, page_size_mm, margin_mm, overlap_mm)) for piece in oversized
+    ]
+    total_pages = len(packed_pages) + sum(len(tiles) for _, tiles in oversized_with_tiles)
+    return packed_pages, oversized_with_tiles, total_pages
 
 
 def main(argv=None) -> int:
@@ -126,7 +150,27 @@ def main(argv=None) -> int:
     pieces = group_into_pieces(polylines)
     print(f"Found {len(pieces)} separate piece(s) in the pattern.", file=sys.stderr)
 
-    packed_pages, oversized = pack_pieces(pieces, page_size, args.margin_mm)
+    landscape_size = (page_size[1], page_size[0])
+    if args.orientation == "portrait":
+        candidates = [("portrait", page_size)]
+    elif args.orientation == "landscape":
+        candidates = [("landscape", landscape_size)]
+    else:
+        candidates = [("portrait", page_size), ("landscape", landscape_size)]
+
+    plans = {name: _plan(pieces, dims, args.margin_mm, args.overlap_mm) for name, dims in candidates}
+    best_name = min(plans, key=lambda name: (len(plans[name][1]), plans[name][2]))
+    page_size = dict(candidates)[best_name]
+    packed_pages, oversized_with_tiles, _ = plans[best_name]
+
+    if len(candidates) > 1:
+        other = [n for n in plans if n != best_name][0]
+        print(
+            f"Orientation: {best_name} ({len(plans[best_name][1])} oversized piece(s), "
+            f"{plans[best_name][2]} page(s) total) beats {other} "
+            f"({len(plans[other][1])} oversized, {plans[other][2]} pages) -- using {best_name}.",
+            file=sys.stderr,
+        )
 
     # Number pieces in reading order (top-to-bottom, left-to-right on the
     # original canvas) so terminal output and on-page labels agree with how
@@ -144,25 +188,24 @@ def main(argv=None) -> int:
         pages.append(PackedPageJob(placements=placements))
 
     tiling_summary = []
-    for piece in oversized:
+    for piece, tiles in oversized_with_tiles:
         num = piece_number[id(piece)]
         pw, ph = piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1]
-        tiles = compute_tiles(piece.bbox, page_size, args.margin_mm, args.overlap_mm)
         label = f"piece {num}/{total_pieces} ({pw:.0f}x{ph:.0f}mm)"
         for tile in tiles:
             pages.append(TilePageJob(polylines=piece.polylines, tile=tile, piece_label=label))
         tiling_summary.append(f"piece {num} ({pw:.0f}x{ph:.0f}mm) -> {tiles[-1].rows}x{tiles[-1].cols} pages")
 
     if packed_pages:
-        fit_count = total_pieces - len(oversized)
+        fit_count = total_pieces - len(oversized_with_tiles)
         print(
             f"{fit_count} piece(s) fit on a page whole and were packed onto "
             f"{len(packed_pages)} page(s) without being split.",
             file=sys.stderr,
         )
-    if oversized:
+    if oversized_with_tiles:
         print(
-            f"{len(oversized)} piece(s) too large for one page, tiled individually "
+            f"{len(oversized_with_tiles)} piece(s) too large for one page, tiled individually "
             f"with {args.overlap_mm}mm overlap: " + "; ".join(tiling_summary),
             file=sys.stderr,
         )
