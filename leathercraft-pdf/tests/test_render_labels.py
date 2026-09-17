@@ -19,6 +19,7 @@ from leathercraft_pdf.render import (
     PIECE_LABEL_WIDTH_FRACTION,
     PackedPageJob,
     PiecePlacement,
+    _rect_inside_polygon,
     draw_pdf,
 )
 
@@ -43,7 +44,13 @@ def _extract_content_streams(pdf_bytes: bytes):
         header = pdf_bytes[max(0, s - 300) : s]
         try:
             if b"ASCII85Decode" in header:
-                raw = base64.a85decode(raw.rstrip(b"~>"), adobe=False)
+                # Strip exactly the 2-byte EOF marker, not a run of any
+                # trailing '~'/'>' chars -- rstrip(b"~>") treats its
+                # argument as a *character set* and can eat real trailing
+                # base85 data that happens to end in '>' too.
+                if raw.endswith(b"~>"):
+                    raw = raw[:-2]
+                raw = base64.a85decode(raw, adobe=False)
             if b"FlateDecode" in header:
                 raw = zlib.decompress(raw)
             out.append(raw.decode("latin1"))
@@ -195,3 +202,61 @@ def test_label_avoids_a_real_notch_even_when_the_bbox_alone_would_fit(tmp_path):
     assert size < MAX_PIECE_LABEL_FONT_SIZE
     right_extent_mm = (stringWidth(text, PIECE_LABEL_FONT, size) / 2.0) / MM_TO_PT
     assert right_extent_mm <= 40.0 + 1e-6
+
+
+def test_rotated_label_clears_a_diagonal_notch_corner_between_words(tmp_path):
+    """A step-shaped notch (straight edge, same x at every sampled y) is
+    easy to catch with a handful of sample points. A *diagonal* corner
+    isn't: it can sit strictly between two adjacent sample points along
+    the text, so a point-only check wrongly accepts a size whose actual
+    rectangle straddles the corner -- exactly what happened with a real
+    "Horizontal Pocket Divider" piece, where the last word of a wrapped
+    line clipped through a tapering notch that no sampled point landed on.
+
+    This is that same piece's real outline (from a Trifold pattern file,
+    centered on its own bbox): a full-height 50mm-wide post on the right
+    with a wide wing tapering in and out on the left over the middle
+    two-thirds of its 105mm length. Verifies the actual rendered label's
+    rectangle -- not just a handful of points on it -- is fully inside the
+    true outline, using the renderer's own rect-vs-polygon containment.
+    """
+    ring = [
+        (25.0, -52.5), (25.0, 52.5), (12.0, 52.5), (12.0, 44.7),
+        (-25.0, 27.5), (-25.0, -27.5), (12.0, -44.7), (12.0, -52.5), (25.0, -52.5),
+    ]
+    placement = PiecePlacement(
+        polylines=[ring], offset_x=100.0, offset_y=100.0,
+        cut_label=None, shape_label="Horizontal Pocket Divider",
+        centroid=(0.0, 0.0), piece_size_mm=(50.0, 105.0),
+    )
+    pages = [PackedPageJob(placements=[placement])]
+    out = str(tmp_path / "out.pdf")
+    draw_pdf(out, pages, PAGE_SIZES_MM["A4"], 10.0, "test.dxf")
+    content = _extract_content_streams(open(out, "rb").read())[0]
+
+    blocks = _label_text_blocks(content)
+    assert blocks
+    size, text, _ = blocks[0]
+
+    margin_mm = 10.0
+
+    def to_page(px, py):
+        return (margin_mm + px + placement.offset_x, margin_mm + py + placement.offset_y)
+
+    page_ring = [to_page(x, y) for x, y in ring]
+    x_mm, y_mm = to_page(0.0, 0.0)
+
+    half_w = stringWidth(text, PIECE_LABEL_FONT, size) / 2.0
+    base_y = -size * 0.35
+    cap_y = base_y + size * 0.8
+    descent_y = base_y - size * 0.25
+
+    page_corners = []
+    for lx, ly in ((-half_w, descent_y), (half_w, descent_y), (half_w, cap_y), (-half_w, cap_y)):
+        parent_x_pt, parent_y_pt = ly, -lx  # rotate_cw: local(x,y) -> parent(y,-x)
+        page_corners.append((x_mm + parent_x_pt / MM_TO_PT, y_mm + parent_y_pt / MM_TO_PT))
+    xs = [p[0] for p in page_corners]
+    ys = [p[1] for p in page_corners]
+    rect = [(min(xs), min(ys)), (max(xs), min(ys)), (max(xs), max(ys)), (min(xs), max(ys))]
+
+    assert _rect_inside_polygon(rect, [page_ring])

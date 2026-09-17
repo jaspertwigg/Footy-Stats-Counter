@@ -275,6 +275,58 @@ def _point_in_polygon(x: float, y: float, polylines) -> bool:
     return inside
 
 
+def _segments_intersect(p1, p2, p3, p4) -> bool:
+    """Do segments p1-p2 and p3-p4 touch or cross? Used to catch a polygon
+    edge cutting through the *middle* of a label line's rectangle -- a
+    sharp notch corner can poke into a rectangle without either of the
+    rectangle's own corners ever landing outside it, which is exactly the
+    case a corner-only or sparsely-sampled check misses.
+    """
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    def on_segment(p, q, r):
+        return min(p[0], r[0]) - 1e-9 <= q[0] <= max(p[0], r[0]) + 1e-9 and \
+            min(p[1], r[1]) - 1e-9 <= q[1] <= max(p[1], r[1]) + 1e-9
+
+    d1 = cross(p3, p4, p1)
+    d2 = cross(p3, p4, p2)
+    d3 = cross(p1, p2, p3)
+    d4 = cross(p1, p2, p4)
+
+    if ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0)):
+        return True
+    if d1 == 0 and on_segment(p3, p1, p4):
+        return True
+    if d2 == 0 and on_segment(p3, p2, p4):
+        return True
+    if d3 == 0 and on_segment(p1, p3, p2):
+        return True
+    if d4 == 0 and on_segment(p1, p4, p2):
+        return True
+    return False
+
+
+def _rect_inside_polygon(rect_corners, polylines) -> bool:
+    """Is the (convex, 4-point) rect entirely inside the polygon soup?
+    True iff every corner is inside AND no polygon edge crosses a rect
+    edge -- corner-containment alone would miss a notch that cuts into a
+    rect's side without ever enclosing a corner.
+    """
+    for x, y in rect_corners:
+        if not _point_in_polygon(x, y, polylines):
+            return False
+    rect_edges = [(rect_corners[i], rect_corners[(i + 1) % 4]) for i in range(4)]
+    for poly in polylines:
+        for i in range(len(poly) - 1):
+            edge = (poly[i], poly[i + 1])
+            for r1, r2 in rect_edges:
+                if _segments_intersect(edge[0], edge[1], r1, r2):
+                    return False
+    return True
+
+
 def _line_baselines(n, name_line_count, size):
     """Baseline y-offset (relative to the block's vertical center) for each
     of `n` lines, with lines from `name_line_count` onward (the cut count)
@@ -363,21 +415,35 @@ def _draw_piece_labels(c, x_mm, y_mm, piece_w_mm, piece_h_mm, shape_label, cut_l
     avail_w_pt = _mm(text_w_mm) * PIECE_LABEL_WIDTH_FRACTION
     avail_h_pt = _mm(text_h_mm) * PIECE_LABEL_HEIGHT_FRACTION
 
+    def line_rect_in_page_space(local_x0, local_x1, local_y0, local_y1):
+        # Rotation here is always a multiple of 90 degrees, so a local
+        # axis-aligned rectangle maps to an axis-aligned rectangle in page
+        # space too -- no need to handle an arbitrary quadrilateral.
+        pts = []
+        for lx, ly in ((local_x0, local_y0), (local_x1, local_y0), (local_x1, local_y1), (local_x0, local_y1)):
+            if rotate_cw:
+                parent_x_pt, parent_y_pt = ly, -lx
+            else:
+                parent_x_pt, parent_y_pt = lx, ly
+            pts.append((x_mm + parent_x_pt / MM_TO_PT, y_mm + parent_y_pt / MM_TO_PT))
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return [(min(xs), min(ys)), (max(xs), min(ys)), (max(xs), max(ys)), (min(xs), max(ys))]
+
     def fits_inside_shape(size, lines, name_line_count):
+        # A whole rectangle per line, not sample points along it -- a
+        # sharp notch corner can cut into a line's rectangle without ever
+        # containing one of a handful of sampled points, especially right
+        # at a wrapped word boundary like the one between two words in a
+        # long name.
         baselines = _line_baselines(len(lines), name_line_count, size)
         cap_height = size * 0.8
+        descent = size * 0.25
         for line, base_y in zip(lines, baselines):
             half_w = stringWidth(line, PIECE_LABEL_FONT, size) / 2.0
-            for local_x in (-half_w, -half_w / 2.0, 0.0, half_w / 2.0, half_w):
-                for local_y in (base_y, base_y + cap_height):
-                    if rotate_cw:
-                        parent_x_pt, parent_y_pt = local_y, -local_x
-                    else:
-                        parent_x_pt, parent_y_pt = local_x, local_y
-                    page_x_mm = x_mm + parent_x_pt / MM_TO_PT
-                    page_y_mm = y_mm + parent_y_pt / MM_TO_PT
-                    if not _point_in_polygon(page_x_mm, page_y_mm, page_polylines):
-                        return False
+            rect = line_rect_in_page_space(-half_w, half_w, base_y - descent, base_y + cap_height)
+            if not _rect_inside_polygon(rect, page_polylines):
+                return False
         return True
 
     extra_ok = fits_inside_shape if page_polylines else None

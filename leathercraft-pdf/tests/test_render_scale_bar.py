@@ -41,7 +41,13 @@ def _extract_content_streams(pdf_bytes: bytes):
         header = pdf_bytes[max(0, s - 300) : s]
         try:
             if b"ASCII85Decode" in header:
-                raw = base64.a85decode(raw.rstrip(b"~>"), adobe=False)
+                # Strip exactly the 2-byte EOF marker, not a run of any
+                # trailing '~'/'>' chars -- rstrip(b"~>") treats its
+                # argument as a *character set* and can eat real trailing
+                # base85 data that happens to end in '>' too.
+                if raw.endswith(b"~>"):
+                    raw = raw[:-2]
+                raw = base64.a85decode(raw, adobe=False)
             if b"FlateDecode" in header:
                 raw = zlib.decompress(raw)
             out.append(raw.decode("latin1"))
