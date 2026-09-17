@@ -174,16 +174,27 @@ python make_pdf.py wallet.lcc \
   --label 3="Extra Pocket" --label 4="Front Pocket"
 ```
 
-The name is printed on that shape in one large, bold, consistent size.
-If the piece has duplicates, its "Cut N" is appended in parentheses on the
-same line, e.g. `Hidden Pocket (Cut 2)`, so it still reads as separate,
-supplementary information without needing a different size or weight to
-set it apart. A piece with no name just shows `(Cut N)` on its own.
+The name is printed on that shape in bold, as large as will fit. If the
+piece has duplicates, its "Cut N" is parenthesized and always placed on
+its own line below the name, e.g.:
+
+```
+Hidden Pocket
+  (Cut 2)
+```
+
+A piece with no name just shows `(Cut N)` on its own. The name itself
+word-wraps to stay within the piece's own width, and the whole label
+shrinks (down to a minimum before giving up) if even a single wrapped word
+wouldn't otherwise fit — a label is never drawn wider than the shape it
+sits on, whatever the piece's size or the name's length.
 
 Any name containing the word "horizontal" (case-insensitive) gets its
 label rotated 90 degrees clockwise, for a piece narrow enough that
 sideways text reads more naturally along its length — e.g.
-`--label 7="Horizontal Front Pocket"`.
+`--label 7="Horizontal Front Pocket"`. Wrapping accounts for the rotation
+too: text then wraps to the piece's height rather than its width, since
+that's the dimension it now reads along.
 
 If a piece's geometry came out of the CAD file upside-down relative to how
 it should read once cut and assembled, pass `--flip N` (repeatable) to

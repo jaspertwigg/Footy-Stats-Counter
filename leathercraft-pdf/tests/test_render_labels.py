@@ -1,22 +1,28 @@
-"""Verifies, from the actual PDF bytes, how a piece's name (from --label)
-and its "Cut N" count combine into one label -- name and count in one
-consistent font size, the count in parentheses -- and that a "horizontal"
-piece's label rotates 90 degrees clockwise. Decodes the real content
-stream rather than trusting the drawing code, the same way
-test_render_scale_bar.py does.
+"""Verifies, from the actual PDF bytes, that a piece's label -- its name
+and/or "Cut N" count -- wraps and shrinks to fit within the piece's own
+bounding box, with the cut count always on a separate line from the name.
+Decodes the real content stream rather than trusting the drawing code, the
+same way test_render_scale_bar.py does.
 """
 
 import base64
 import re
 import zlib
 
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
 from leathercraft_pdf.layout import PAGE_SIZES_MM
 from leathercraft_pdf.render import (
-    PIECE_LABEL_FONT_SIZE,
+    MAX_PIECE_LABEL_FONT_SIZE,
+    MIN_PIECE_LABEL_FONT_SIZE,
+    PIECE_LABEL_FONT,
+    PIECE_LABEL_WIDTH_FRACTION,
     PackedPageJob,
     PiecePlacement,
     draw_pdf,
 )
+
+MM_TO_PT = 72.0 / 25.4
 
 
 def _extract_content_streams(pdf_bytes: bytes):
@@ -46,12 +52,13 @@ def _extract_content_streams(pdf_bytes: bytes):
     return out
 
 
-def _render_one_piece(tmp_path, shape_label, cut_label):
-    piece_polylines = [[(0, 0), (20, 0), (20, 15), (0, 15), (0, 0)]]
+def _render_one_piece(tmp_path, shape_label, cut_label, piece_w_mm=60.0, piece_h_mm=60.0):
+    hw, hh = piece_w_mm / 2.0, piece_h_mm / 2.0
+    piece_polylines = [[(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh), (-hw, -hh)]]
     placement = PiecePlacement(
-        polylines=piece_polylines, offset_x=50.0, offset_y=50.0,
+        polylines=piece_polylines, offset_x=100.0, offset_y=100.0,
         footer_label="piece 1/1", cut_label=cut_label, shape_label=shape_label,
-        centroid=(10.0, 7.5),
+        centroid=(0.0, 0.0), piece_size_mm=(piece_w_mm, piece_h_mm),
     )
     pages = [PackedPageJob(placements=[placement])]
     out = str(tmp_path / "out.pdf")
@@ -60,57 +67,86 @@ def _render_one_piece(tmp_path, shape_label, cut_label):
 
 
 def _unescape_pdf_string(s: str) -> str:
-    # reportlab escapes literal ( ) \ inside PDF string literals.
     return s.replace("\\(", "(").replace("\\)", ")").replace("\\\\", "\\")
 
 
-def _drawn_texts(content: str):
-    """All strings actually drawn with Tj, in document order, unescaped."""
-    return [_unescape_pdf_string(m) for m in re.findall(r"\((.*?(?<!\\))\) Tj", content)]
-
-
-def _font_size_for_text(content: str, text: str):
-    """Font size active when `text` was drawn.
-
-    reportlab emits one BT..ET block per font-size change and a separate
-    one per text draw, in that order -- track the most recently set size
-    as we scan and report it against a Tj block that matches `text`.
+def _label_text_blocks(content: str):
+    """(font_size, text, y_baseline) for every Tj drawn on the piece label
+    (font F2, the Helvetica-Bold resource reportlab assigns after F1 is
+    used for the page footer) -- in document order, tracking the most
+    recent Tf and Tm as we scan.
     """
-    target = text.replace("(", "\\(").replace(")", "\\)")
+    results = []
     current_size = None
+    current_y = None
     for block in re.findall(r"BT(.*?)ET", content, re.DOTALL):
-        m = re.search(r"/F\d+ ([\d.]+) Tf", block)
-        if m:
-            current_size = float(m.group(1))
+        tf = re.search(r"/F\d+ ([\d.]+) Tf", block)
+        if tf:
+            current_size = float(tf.group(1))
             continue
-        if f"({target}) Tj" in block:
-            return current_size
-    return None
+        tm = re.search(r"1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm", block)
+        if tm:
+            current_y = float(tm.group(2))
+        m = re.search(r"\((.*?(?<!\\))\) Tj", block)
+        if m:
+            text = _unescape_pdf_string(m.group(1))
+            # Skip page furniture (footer, scale bar, date) -- easy to tell
+            # apart since none of it looks like a piece label in these tests.
+            if "|" in text or text in ("5cm", "3cm") or re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+                continue
+            results.append((current_size, text, current_y))
+    return results
 
 
-def test_name_and_cut_count_combine_into_one_bracketed_line(tmp_path):
+def test_cut_count_is_a_separate_text_from_the_name(tmp_path):
     content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
-    assert "Outer Shell (Cut 2)" in _drawn_texts(content)
+    texts = [t for _, t, _ in _label_text_blocks(content)]
+    assert "Outer Shell" in texts
+    assert "(Cut 2)" in texts
+    # Not merged into one string anymore.
+    assert "Outer Shell (Cut 2)" not in texts
 
 
-def test_cut_label_alone_is_still_parenthesized(tmp_path):
-    content = _render_one_piece(tmp_path, shape_label=None, cut_label="Cut 3")
-    assert "(Cut 3)" in _drawn_texts(content)
+def test_cut_count_line_is_below_the_name_line(tmp_path):
+    content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
+    blocks = {text: y for _, text, y in _label_text_blocks(content)}
+    assert blocks["(Cut 2)"] < blocks["Outer Shell"]
 
 
-def test_name_alone_has_no_brackets(tmp_path):
-    content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label=None)
-    assert "Outer Shell" in _drawn_texts(content)
+def test_long_name_wraps_across_multiple_lines(tmp_path):
+    # Comfortably too long to fit one line even at the smallest size on a
+    # narrow piece.
+    content = _render_one_piece(
+        tmp_path, shape_label="A Very Long Descriptive Pocket Name Indeed", cut_label=None,
+        piece_w_mm=25.0, piece_h_mm=60.0,
+    )
+    texts = [t for _, t, _ in _label_text_blocks(content)]
+    assert len(texts) > 1
 
 
-def test_all_label_variants_use_the_same_font_size(tmp_path):
-    combined = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
-    name_only = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label=None)
-    cut_only = _render_one_piece(tmp_path, shape_label=None, cut_label="Cut 3")
+def test_every_label_line_fits_within_the_piece_width(tmp_path):
+    piece_w_mm = 30.0
+    content = _render_one_piece(
+        tmp_path, shape_label="A Very Long Descriptive Pocket Name Indeed", cut_label="Cut 4",
+        piece_w_mm=piece_w_mm, piece_h_mm=80.0,
+    )
+    max_allowed_pt = piece_w_mm * MM_TO_PT  # generous: full width, not just the inset fraction
+    for size, text, _ in _label_text_blocks(content):
+        assert stringWidth(text, PIECE_LABEL_FONT, size) <= max_allowed_pt + 1e-6
 
-    assert _font_size_for_text(combined, "Outer Shell (Cut 2)") == PIECE_LABEL_FONT_SIZE
-    assert _font_size_for_text(name_only, "Outer Shell") == PIECE_LABEL_FONT_SIZE
-    assert _font_size_for_text(cut_only, "(Cut 3)") == PIECE_LABEL_FONT_SIZE
+
+def test_small_piece_gets_a_smaller_font_than_a_large_one(tmp_path):
+    small = _render_one_piece(tmp_path, shape_label="Card Pocket", cut_label=None, piece_w_mm=15.0, piece_h_mm=15.0)
+    large = _render_one_piece(tmp_path, shape_label="Card Pocket", cut_label=None, piece_w_mm=200.0, piece_h_mm=200.0)
+    small_size = _label_text_blocks(small)[0][0]
+    large_size = _label_text_blocks(large)[0][0]
+    assert small_size < large_size
+    assert MIN_PIECE_LABEL_FONT_SIZE <= small_size <= MAX_PIECE_LABEL_FONT_SIZE
+    assert large_size == MAX_PIECE_LABEL_FONT_SIZE
+
+
+def test_width_fraction_leaves_an_inset(tmp_path):
+    assert 0 < PIECE_LABEL_WIDTH_FRACTION < 1
 
 
 def test_horizontal_named_piece_gets_rotated_text(tmp_path):

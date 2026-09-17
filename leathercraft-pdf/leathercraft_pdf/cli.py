@@ -263,11 +263,12 @@ def main(argv=None) -> int:
             shape_label = labels.get(num)
             cut_label = cut_label_for(piece)
             centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
+            piece_size = (piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1])
             placements.append(
                 PiecePlacement(
                     polylines=piece.polylines, offset_x=ox, offset_y=oy,
                     footer_label=footer_label, cut_label=cut_label, shape_label=shape_label,
-                    centroid=centroid,
+                    centroid=centroid, piece_size_mm=piece_size,
                 )
             )
         pages.append(PackedPageJob(placements=placements))
@@ -295,6 +296,7 @@ def main(argv=None) -> int:
                     cut_label=cut_label if owns_label else None,
                     shape_label=shape_label if owns_label else None,
                     cut_centroid=centroid if owns_label else None,
+                    piece_size_mm=(pw, ph) if owns_label else None,
                 )
             )
         tiling_summary.append(f"piece {num} ({pw:.0f}x{ph:.0f}mm) -> {tiles[-1].rows}x{tiles[-1].cols} pages")

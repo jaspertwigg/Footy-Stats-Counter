@@ -23,6 +23,7 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas as rl_canvas
 
 from .geometry import Polyline
@@ -33,9 +34,18 @@ MM_TO_PT = 72.0 / 25.4
 REG_GRID_SPACING_MM = 50.0
 REG_MARK_SIZE_MM = 3.0
 LINE_WIDTH_MM = 0.15
-PIECE_LABEL_FONT_SIZE = 20  # one size for every piece label, name and cut count alike
 SCALE_BAR_WIDTH_CM = 5.0
 SCALE_BAR_HEIGHT_CM = 3.0
+
+# Piece labels: as large as fits, word-wrapped to the piece's own width, the
+# cut count always broken onto its own line -- shrinking all the way down to
+# MIN before ever letting a label spill outside its shape.
+PIECE_LABEL_FONT = "Helvetica-Bold"
+MAX_PIECE_LABEL_FONT_SIZE = 20
+MIN_PIECE_LABEL_FONT_SIZE = 5
+PIECE_LABEL_LINE_SPACING = 1.15
+PIECE_LABEL_WIDTH_FRACTION = 0.85  # inset from the piece's true edges
+PIECE_LABEL_HEIGHT_FRACTION = 0.85
 
 
 @dataclass
@@ -53,6 +63,9 @@ class PiecePlacement:
     # Pattern-space (px, py), before offset_x/offset_y -- where to center
     # cut_label/shape_label, if either is set.
     centroid: Optional[Tuple[float, float]] = None
+    # The piece's own (width, height) in mm -- how far the label text is
+    # allowed to spread before it must wrap or shrink.
+    piece_size_mm: Optional[Tuple[float, float]] = None
 
 
 @dataclass
@@ -70,6 +83,7 @@ class TilePageJob:
     cut_label: Optional[str] = None
     shape_label: Optional[str] = None
     cut_centroid: Optional[Tuple[float, float]] = None
+    piece_size_mm: Optional[Tuple[float, float]] = None
 
 
 def _mm(v: float) -> float:
@@ -137,7 +151,8 @@ def _draw_tile_page(c, job: TilePageJob, page_num, total_pages, page_size_mm, ma
     _draw_registration_grid(c, to_page, x0, y0, x1, y1)
     if job.cut_centroid and (job.cut_label or job.shape_label):
         cx, cy = to_page(*job.cut_centroid)
-        _draw_piece_labels(c, cx, cy, job.shape_label, job.cut_label)
+        pw, ph = job.piece_size_mm or (tile_w, tile_h)
+        _draw_piece_labels(c, cx, cy, pw, ph, job.shape_label, job.cut_label)
     c.restoreState()
 
     # --- Page furniture: crop marks, scale bar, footer, overview (unclipped) ---
@@ -177,7 +192,8 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
             piece_labels.append(placement.footer_label)
         if placement.centroid and (placement.cut_label or placement.shape_label):
             cx, cy = to_page(*placement.centroid)
-            _draw_piece_labels(c, cx, cy, placement.shape_label, placement.cut_label)
+            pw, ph = placement.piece_size_mm or (printable_w, printable_h)
+            _draw_piece_labels(c, cx, cy, pw, ph, placement.shape_label, placement.cut_label)
     c.restoreState()
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)
@@ -237,35 +253,107 @@ def _draw_registration_grid(c, to_page, x0, y0, x1, y1):
     c.setStrokeColorRGB(0, 0, 0)
 
 
-def _draw_piece_labels(c, x_mm, y_mm, shape_label, cut_label):
+def _wrap_to_width(text, font, size, max_width_pt):
+    """Greedy word-wrap: as many words per line as fit in max_width_pt."""
+    words = text.split()
+    if not words:
+        return []
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if stringWidth(candidate, font, size) <= max_width_pt:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def _layout_piece_label(shape_label, cut_label, avail_w_pt, avail_h_pt):
+    """Word-wrap `shape_label` and put `cut_label` on its own line(s),
+    picking the largest font size (from MAX down to MIN) at which the
+    whole block fits within avail_w_pt x avail_h_pt.
+
+    Returns (font_size, lines, name_line_count). `lines[:name_line_count]`
+    is the (possibly wrapped) name; the rest is the cut count.
+    """
+    cut_text = f"({cut_label})" if cut_label else None
+
+    def build(size):
+        name_lines = _wrap_to_width(shape_label, PIECE_LABEL_FONT, size, avail_w_pt) if shape_label else []
+        cut_lines = _wrap_to_width(cut_text, PIECE_LABEL_FONT, size, avail_w_pt) if cut_text else []
+        return name_lines, cut_lines
+
+    def measure(name_lines, cut_lines, size):
+        all_lines = name_lines + cut_lines
+        if not all_lines:
+            return 0.0, 0.0
+        line_height = size * PIECE_LABEL_LINE_SPACING
+        gap = line_height * 0.35 if (name_lines and cut_lines) else 0.0
+        total_height = line_height * len(all_lines) + gap
+        max_width = max(stringWidth(line, PIECE_LABEL_FONT, size) for line in all_lines)
+        return total_height, max_width
+
+    for size in range(MAX_PIECE_LABEL_FONT_SIZE, MIN_PIECE_LABEL_FONT_SIZE - 1, -1):
+        name_lines, cut_lines = build(size)
+        total_height, max_width = measure(name_lines, cut_lines, size)
+        if total_height <= avail_h_pt and max_width <= avail_w_pt:
+            return size, name_lines + cut_lines, len(name_lines)
+
+    # Nothing fit even at the minimum size -- use it anyway, best effort,
+    # rather than showing no label at all.
+    name_lines, cut_lines = build(MIN_PIECE_LABEL_FONT_SIZE)
+    return MIN_PIECE_LABEL_FONT_SIZE, name_lines + cut_lines, len(name_lines)
+
+
+def _draw_piece_labels(c, x_mm, y_mm, piece_w_mm, piece_h_mm, shape_label, cut_label):
     """Draw a piece's name and/or its "Cut N" count, centered on a point,
-    as one line of text in one consistent bold size -- e.g.
-    "Vertical Card Divider (Cut 2)". The cut count is parenthesized so it
-    still reads as separate, supplementary information even though nothing
-    about its size or weight sets it apart anymore.
+    word-wrapped and auto-shrunk to fit within the piece's own bounding
+    box -- the name never spills outside the shape. The cut count always
+    lands on a line of its own, parenthesized, below the name.
 
     A shape whose name contains "horizontal" gets its label rotated 90
     degrees clockwise -- e.g. a narrow "Horizontal Pocket Divider" piece
-    where sideways text reads more naturally along its length.
+    where sideways text reads more naturally along its length. Rotating
+    swaps which of the piece's two dimensions bounds line width vs. total
+    block height, since text now reads along what was the piece's height.
     """
-    if shape_label and cut_label:
-        text = f"{shape_label} ({cut_label})"
-    elif shape_label:
-        text = shape_label
-    elif cut_label:
-        text = f"({cut_label})"
-    else:
+    if not shape_label and not cut_label:
         return
 
     rotate_cw = bool(shape_label) and "horizontal" in shape_label.lower()
+    text_w_mm, text_h_mm = (piece_h_mm, piece_w_mm) if rotate_cw else (piece_w_mm, piece_h_mm)
+    avail_w_pt = _mm(text_w_mm) * PIECE_LABEL_WIDTH_FRACTION
+    avail_h_pt = _mm(text_h_mm) * PIECE_LABEL_HEIGHT_FRACTION
+
+    size, lines, name_line_count = _layout_piece_label(shape_label, cut_label, avail_w_pt, avail_h_pt)
+    if not lines:
+        return
+
+    n = len(lines)
+    line_height = size * PIECE_LABEL_LINE_SPACING
+    has_gap = 0 < name_line_count < n
+    gap = line_height * 0.35 if has_gap else 0.0
+
+    # Baseline for line i, block vertically centered on the origin; lines
+    # from name_line_count onward (the cut count) get pushed down by the
+    # extra gap, and the whole stack re-centered to absorb it.
+    baselines = [((n - 1) / 2.0 - i) * line_height - size * 0.35 for i in range(n)]
+    if has_gap:
+        for i in range(name_line_count, n):
+            baselines[i] -= gap
+        baselines = [y + gap / 2.0 for y in baselines]
 
     c.saveState()
     c.translate(_mm(x_mm), _mm(y_mm))
     if rotate_cw:
         c.rotate(-90)
     c.setFillColorRGB(0, 0, 0)
-    c.setFont("Helvetica-Bold", PIECE_LABEL_FONT_SIZE)
-    c.drawCentredString(0, -PIECE_LABEL_FONT_SIZE * 0.35, text)
+    c.setFont(PIECE_LABEL_FONT, size)
+    for line, y in zip(lines, baselines):
+        c.drawCentredString(0, y, line)
     c.restoreState()
 
 
