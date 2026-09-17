@@ -1,5 +1,5 @@
 from leathercraft_pdf.layout import PAGE_SIZES_MM
-from leathercraft_pdf.packing import pack_pieces
+from leathercraft_pdf.packing import _group_by_similar_size, pack_pieces
 from leathercraft_pdf.pieces import Piece
 
 
@@ -39,6 +39,52 @@ def test_placed_pieces_stay_within_the_printable_area():
             x1, y1 = maxx + ox, maxy + oy
             assert x0 >= -1e-9 and y0 >= -1e-9
             assert x1 <= printable_w + 1e-6 and y1 <= printable_h + 1e-6
+
+
+def test_two_largest_pieces_get_their_own_page():
+    big1 = _piece(150, 100)
+    big2 = _piece(140, 95)
+    smalls = [_piece(30, 20) for _ in range(6)]
+    packed_pages, oversized = pack_pieces([big1] + smalls + [big2], PAGE_SIZES_MM["A4"], margin_mm=10)
+    assert oversized == []
+
+    assert len(packed_pages[0].placements) == 1
+    assert len(packed_pages[1].placements) == 1
+    large_ids = {id(packed_pages[0].placements[0][0]), id(packed_pages[1].placements[0][0])}
+    assert large_ids == {id(big1), id(big2)}
+
+    for pg in packed_pages[2:]:
+        for piece, _, _ in pg.placements:
+            assert id(piece) not in large_ids
+
+
+def test_group_by_similar_size_clusters_matching_dimensions_together():
+    a1, a2 = _piece(80, 60), _piece(81, 59)
+    b1, b2 = _piece(30, 20), _piece(29, 21)
+    grouped = _group_by_similar_size([b1, a1, b2, a2], tolerance_mm=8.0)
+    assert grouped == [a1, a2, b2, b1]
+
+
+def test_similar_sized_pieces_land_on_the_same_page_when_they_fit_together():
+    page = PAGE_SIZES_MM["A4"]
+    # `big` are the largest here and get soloed out (tested separately above);
+    # `mediums` should then land together rather than scattered one-per-page
+    # mixed in with `tiny`.
+    big = [_piece(150, 100) for _ in range(2)]
+    mediums = [_piece(80, 60) for _ in range(4)]
+    tiny = [_piece(15, 10) for _ in range(4)]
+    packed_pages, oversized = pack_pieces(big + mediums + tiny, page, margin_mm=10)
+    assert oversized == []
+
+    def sizes_on_page(pg):
+        return {round(p.bbox[2] - p.bbox[0]) for p, _, _ in pg.placements}
+
+    medium_pages = [pg for pg in packed_pages if 80 in sizes_on_page(pg)]
+    # All 4 mediums should be together on the medium page(s), not scattered
+    # across many pages each mixed in with other sizes.
+    medium_count = sum(1 for pg in medium_pages for p, _, _ in pg.placements if round(p.bbox[2] - p.bbox[0]) == 80)
+    assert medium_count == 4
+    assert len(medium_pages) == 1
 
 
 def test_placed_pieces_on_the_same_page_do_not_overlap():

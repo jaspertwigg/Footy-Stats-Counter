@@ -144,16 +144,8 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
             return (margin_mm + px + ox, margin_mm + py + oy)
 
         _stroke_polylines(c, to_page, polylines, (margin_mm, margin_mm, margin_mm + printable_w, margin_mm + printable_h))
-        piece_labels.append(label)
-
         if label:
-            bbox = _polylines_bbox(polylines)
-            if bbox:
-                lx, ly = to_page(bbox[0], bbox[1])
-                c.setFont("Helvetica", 5)
-                c.setFillColorRGB(0.4, 0.4, 0.4)
-                c.drawString(_mm(lx), _mm(ly - 2.2), label)
-                c.setFillColorRGB(0, 0, 0)
+            piece_labels.append(label)
     c.restoreState()
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)

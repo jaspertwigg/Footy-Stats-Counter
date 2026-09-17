@@ -129,10 +129,22 @@ page) or **tiled** (if it's too big for any single page) — never both, and
 a packed piece is never split.
 
 **Packed pages** hold one or more whole pieces, placed edge to edge to use
-paper efficiently. Pieces are never rotated to pack tighter, since leather
-has a grain direction and a pattern piece's orientation usually matters.
-Each piece gets a small label (e.g. `piece 3/8`) printed at its corner so
-you can match it back to the terminal summary.
+paper efficiently, in this order:
+
+1. **The two largest pieces each get a page to themselves**, even if
+   something smaller would technically fit alongside them — a big piece
+   sharing a page with several small ones is easy to misread when you're
+   sorting through printouts.
+2. **Everything else is grouped by how similar its size is**, so a page
+   tends to hold "the four card-slot pieces" rather than an arbitrary mix.
+   This is a soft preference, not a hard rule: if a size group doesn't
+   exactly fill a page, the next group may fill the leftover space rather
+   than starting a fresh sheet and wasting paper.
+
+Pieces are never rotated to pack tighter, since leather has a grain
+direction and a pattern piece's orientation usually matters. Which pieces
+ended up on which page is named in the footer (e.g. `piece 3/8, piece 5/8`)
+rather than stamped on the artwork itself.
 
 **Tiled pages** are used only for a piece too big for one sheet. Each tile
 is its own full page, clipped to its own rectangle, with:
