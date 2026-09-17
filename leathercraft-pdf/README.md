@@ -193,6 +193,13 @@ shrinks (down to a minimum before giving up) if even a single wrapped word
 wouldn't otherwise fit — a label is never drawn wider than the shape it
 sits on, whatever the piece's size or the name's length.
 
+This checks the piece's actual outline, not just its rectangular bounding
+box: a notched or irregular shape (see `irregular/notched shape` above)
+can have text that fits comfortably inside the bbox while still spilling
+into a cut-out that isn't part of the leather at all. Fitting accounts for
+that real outline too, shrinking or wrapping further if needed so the
+label never lands outside the piece, even into one of its own notches.
+
 Any name containing the word "horizontal" (case-insensitive) gets its
 label rotated 90 degrees clockwise, for a piece narrow enough that
 sideways text reads more naturally along its length — e.g.

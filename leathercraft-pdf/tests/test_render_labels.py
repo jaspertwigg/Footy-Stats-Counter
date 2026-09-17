@@ -159,3 +159,39 @@ def test_horizontal_named_piece_gets_rotated_text(tmp_path):
 def test_non_horizontal_named_piece_is_not_rotated(tmp_path):
     content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label=None)
     assert re.search(r"0 -1 1 0 [\d.]+ [\d.]+ cm", content) is None
+
+
+def test_label_avoids_a_real_notch_even_when_the_bbox_alone_would_fit(tmp_path):
+    """A rectangular-bbox check alone can't see a notch cut into the piece's
+    actual outline -- it would happily let the label spill into the cut-out
+    at MAX_PIECE_LABEL_FONT_SIZE. Reproduces the report that a piece's label
+    wasn't actually staying inside its shape.
+
+    The piece here is a generously large 200x60mm rectangle (so the bbox
+    check alone never binds) with a notch bitten out of its right edge from
+    x=40mm to x=100mm, spanning the label's full vertical reach -- so any
+    centered text reaching past x=40mm on the right is landing outside the
+    actual leather.
+    """
+    piece_polylines = [[
+        (-100, -30), (100, -30), (100, -15), (40, -15),
+        (40, 15), (100, 15), (100, 30), (-100, 30), (-100, -30),
+    ]]
+    placement = PiecePlacement(
+        polylines=piece_polylines, offset_x=50.0, offset_y=50.0,
+        cut_label=None, shape_label="Overflowing Notched Panel",
+        centroid=(0.0, 0.0), piece_size_mm=(200.0, 60.0),
+    )
+    pages = [PackedPageJob(placements=[placement])]
+    out = str(tmp_path / "out.pdf")
+    draw_pdf(out, pages, PAGE_SIZES_MM["A4"], 10.0, "test.dxf")
+    content = _extract_content_streams(open(out, "rb").read())[0]
+
+    blocks = _label_text_blocks(content)
+    assert blocks
+    size, text, _ = blocks[0]
+    # The bbox alone would have picked MAX_PIECE_LABEL_FONT_SIZE; only the
+    # notch-aware check has any reason to pick something smaller.
+    assert size < MAX_PIECE_LABEL_FONT_SIZE
+    right_extent_mm = (stringWidth(text, PIECE_LABEL_FONT, size) / 2.0) / MM_TO_PT
+    assert right_extent_mm <= 40.0 + 1e-6

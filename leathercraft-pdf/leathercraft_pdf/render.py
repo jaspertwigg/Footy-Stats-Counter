@@ -148,7 +148,8 @@ def _draw_tile_page(c, job: TilePageJob, page_size_mm, margin_mm, title):
     if job.cut_centroid and (job.cut_label or job.shape_label):
         cx, cy = to_page(*job.cut_centroid)
         pw, ph = job.piece_size_mm or (tile_w, tile_h)
-        _draw_piece_labels(c, cx, cy, pw, ph, job.shape_label, job.cut_label)
+        page_polylines = [[to_page(x, y) for x, y in poly] for poly in job.polylines]
+        _draw_piece_labels(c, cx, cy, pw, ph, job.shape_label, job.cut_label, page_polylines)
     c.restoreState()
 
     # --- Page furniture: crop marks, scale bar, header, overview (unclipped) ---
@@ -181,7 +182,8 @@ def _draw_packed_page(c, job: PackedPageJob, page_size_mm, margin_mm, title):
         if placement.centroid and (placement.cut_label or placement.shape_label):
             cx, cy = to_page(*placement.centroid)
             pw, ph = placement.piece_size_mm or (printable_w, printable_h)
-            _draw_piece_labels(c, cx, cy, pw, ph, placement.shape_label, placement.cut_label)
+            page_polylines = [[to_page(x, y) for x, y in poly] for poly in placement.polylines]
+            _draw_piece_labels(c, cx, cy, pw, ph, placement.shape_label, placement.cut_label, page_polylines)
     c.restoreState()
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)
@@ -253,10 +255,50 @@ def _wrap_to_width(text, font, size, max_width_pt):
     return lines
 
 
-def _layout_piece_label(shape_label, cut_label, avail_w_pt, avail_h_pt):
+def _point_in_polygon(x: float, y: float, polylines) -> bool:
+    """Even-odd ray-casting membership test against the pooled edges of
+    every polyline in `polylines` -- the piece's true outline, not just its
+    rectangular bounding box. Operates directly on however many separate
+    rings the piece has (an outer boundary plus any internal notch or
+    decoration lines), since a crossing count only cares about individual
+    edges, not which ring each one belongs to.
+    """
+    inside = False
+    for poly in polylines:
+        for i in range(len(poly) - 1):
+            x0, y0 = poly[i]
+            x1, y1 = poly[i + 1]
+            if (y0 > y) != (y1 > y):
+                x_at_y = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
+                if x < x_at_y:
+                    inside = not inside
+    return inside
+
+
+def _line_baselines(n, name_line_count, size):
+    """Baseline y-offset (relative to the block's vertical center) for each
+    of `n` lines, with lines from `name_line_count` onward (the cut count)
+    pushed down by an extra gap and the whole stack re-centered to absorb
+    it. Shared between the actual drawing and the fit check, so both agree
+    on exactly where each line lands.
+    """
+    line_height = size * PIECE_LABEL_LINE_SPACING
+    has_gap = 0 < name_line_count < n
+    gap = line_height * 0.35 if has_gap else 0.0
+    baselines = [((n - 1) / 2.0 - i) * line_height - size * 0.35 for i in range(n)]
+    if has_gap:
+        for i in range(name_line_count, n):
+            baselines[i] -= gap
+        baselines = [y + gap / 2.0 for y in baselines]
+    return baselines
+
+
+def _layout_piece_label(shape_label, cut_label, avail_w_pt, avail_h_pt, extra_ok=None):
     """Word-wrap `shape_label` and put `cut_label` on its own line(s),
     picking the largest font size (from MAX down to MIN) at which the
-    whole block fits within avail_w_pt x avail_h_pt.
+    whole block fits within avail_w_pt x avail_h_pt -- and, if `extra_ok`
+    is given, also passes that extra check (e.g. staying inside the
+    piece's real, possibly notched, outline rather than just its bbox).
 
     Returns (font_size, lines, name_line_count). `lines[:name_line_count]`
     is the (possibly wrapped) name; the rest is the cut count.
@@ -282,15 +324,18 @@ def _layout_piece_label(shape_label, cut_label, avail_w_pt, avail_h_pt):
         name_lines, cut_lines = build(size)
         total_height, max_width = measure(name_lines, cut_lines, size)
         if total_height <= avail_h_pt and max_width <= avail_w_pt:
-            return size, name_lines + cut_lines, len(name_lines)
+            lines = name_lines + cut_lines
+            if extra_ok is None or extra_ok(size, lines, len(name_lines)):
+                return size, lines, len(name_lines)
 
     # Nothing fit even at the minimum size -- use it anyway, best effort,
-    # rather than showing no label at all.
+    # rather than showing no label at all. (Skips the extra check too: a
+    # visible-but-imperfect label beats none.)
     name_lines, cut_lines = build(MIN_PIECE_LABEL_FONT_SIZE)
     return MIN_PIECE_LABEL_FONT_SIZE, name_lines + cut_lines, len(name_lines)
 
 
-def _draw_piece_labels(c, x_mm, y_mm, piece_w_mm, piece_h_mm, shape_label, cut_label):
+def _draw_piece_labels(c, x_mm, y_mm, piece_w_mm, piece_h_mm, shape_label, cut_label, page_polylines=None):
     """Draw a piece's name and/or its "Cut N" count, centered on a point,
     word-wrapped and auto-shrunk to fit within the piece's own bounding
     box -- the name never spills outside the shape. The cut count always
@@ -301,6 +346,14 @@ def _draw_piece_labels(c, x_mm, y_mm, piece_w_mm, piece_h_mm, shape_label, cut_l
     where sideways text reads more naturally along its length. Rotating
     swaps which of the piece's two dimensions bounds line width vs. total
     block height, since text now reads along what was the piece's height.
+
+    The bounding box alone isn't enough for a notched/irregular piece --
+    text can fit the rectangle while still landing in a cut-out notch that
+    isn't part of the leather at all. When `page_polylines` (the piece's
+    own outline, already transformed into this same page-space) is given,
+    each candidate size/wrap is additionally checked against the real
+    outline, and rejected in favour of a smaller or more-wrapped one if it
+    would poke outside it.
     """
     if not shape_label and not cut_label:
         return
@@ -310,23 +363,32 @@ def _draw_piece_labels(c, x_mm, y_mm, piece_w_mm, piece_h_mm, shape_label, cut_l
     avail_w_pt = _mm(text_w_mm) * PIECE_LABEL_WIDTH_FRACTION
     avail_h_pt = _mm(text_h_mm) * PIECE_LABEL_HEIGHT_FRACTION
 
-    size, lines, name_line_count = _layout_piece_label(shape_label, cut_label, avail_w_pt, avail_h_pt)
+    def fits_inside_shape(size, lines, name_line_count):
+        baselines = _line_baselines(len(lines), name_line_count, size)
+        cap_height = size * 0.8
+        for line, base_y in zip(lines, baselines):
+            half_w = stringWidth(line, PIECE_LABEL_FONT, size) / 2.0
+            for local_x in (-half_w, -half_w / 2.0, 0.0, half_w / 2.0, half_w):
+                for local_y in (base_y, base_y + cap_height):
+                    if rotate_cw:
+                        parent_x_pt, parent_y_pt = local_y, -local_x
+                    else:
+                        parent_x_pt, parent_y_pt = local_x, local_y
+                    page_x_mm = x_mm + parent_x_pt / MM_TO_PT
+                    page_y_mm = y_mm + parent_y_pt / MM_TO_PT
+                    if not _point_in_polygon(page_x_mm, page_y_mm, page_polylines):
+                        return False
+        return True
+
+    extra_ok = fits_inside_shape if page_polylines else None
+    size, lines, name_line_count = _layout_piece_label(
+        shape_label, cut_label, avail_w_pt, avail_h_pt, extra_ok=extra_ok
+    )
     if not lines:
         return
 
     n = len(lines)
-    line_height = size * PIECE_LABEL_LINE_SPACING
-    has_gap = 0 < name_line_count < n
-    gap = line_height * 0.35 if has_gap else 0.0
-
-    # Baseline for line i, block vertically centered on the origin; lines
-    # from name_line_count onward (the cut count) get pushed down by the
-    # extra gap, and the whole stack re-centered to absorb it.
-    baselines = [((n - 1) / 2.0 - i) * line_height - size * 0.35 for i in range(n)]
-    if has_gap:
-        for i in range(name_line_count, n):
-            baselines[i] -= gap
-        baselines = [y + gap / 2.0 for y in baselines]
+    baselines = _line_baselines(n, name_line_count, size)
 
     c.saveState()
     c.translate(_mm(x_mm), _mm(y_mm))
