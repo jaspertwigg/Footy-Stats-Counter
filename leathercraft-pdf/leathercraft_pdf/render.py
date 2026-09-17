@@ -18,7 +18,6 @@ Two kinds of pages come out of the pipeline (see cli.py / packing.py):
 
 from __future__ import annotations
 
-import datetime
 import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -53,7 +52,6 @@ class PiecePlacement:
     polylines: List[Polyline]
     offset_x: float
     offset_y: float
-    footer_label: str
     # Set only for a deduped piece with more than one copy, e.g. "Cut 2".
     cut_label: Optional[str] = None
     # A user-supplied name for this piece (--label), e.g. "Outer Shell".
@@ -77,7 +75,6 @@ class PackedPageJob:
 class TilePageJob:
     polylines: List[Polyline]
     tile: Tile
-    piece_label: str
     # Only set on the one tile page that "owns" showing this piece's cut
     # and/or shape label (its centroid falls within that tile's rect).
     cut_label: Optional[str] = None
@@ -96,17 +93,16 @@ def draw_pdf(
     page_size_mm: Tuple[float, float],
     margin_mm: float,
     source_name: str,
-    unit_note: str,
 ):
     page_w, page_h = page_size_mm
     c = rl_canvas.Canvas(output_path, pagesize=(_mm(page_w), _mm(page_h)))
-    total = len(pages)
+    title = os.path.basename(source_name)
 
-    for idx, page in enumerate(pages, start=1):
+    for page in pages:
         if isinstance(page, TilePageJob):
-            _draw_tile_page(c, page, idx, total, page_size_mm, margin_mm, source_name, unit_note)
+            _draw_tile_page(c, page, page_size_mm, margin_mm, title)
         else:
-            _draw_packed_page(c, page, idx, total, page_size_mm, margin_mm, source_name, unit_note)
+            _draw_packed_page(c, page, page_size_mm, margin_mm, title)
         c.showPage()
 
     c.save()
@@ -128,7 +124,7 @@ def _stroke_polylines(c, to_page, polylines, clip_rect):
         c.drawPath(path, stroke=1, fill=0)
 
 
-def _draw_tile_page(c, job: TilePageJob, page_num, total_pages, page_size_mm, margin_mm, source_name, unit_note):
+def _draw_tile_page(c, job: TilePageJob, page_size_mm, margin_mm, title):
     page_w, page_h = page_size_mm
     tile = job.tile
     x0, y0, x1, y1 = tile.rect
@@ -155,21 +151,16 @@ def _draw_tile_page(c, job: TilePageJob, page_num, total_pages, page_size_mm, ma
         _draw_piece_labels(c, cx, cy, pw, ph, job.shape_label, job.cut_label)
     c.restoreState()
 
-    # --- Page furniture: crop marks, scale bar, footer, overview (unclipped) ---
+    # --- Page furniture: crop marks, scale bar, header, overview (unclipped) ---
     _draw_crop_marks(c, page_w, page_h, margin_mm)
     _draw_scale_bar(c, margin_mm)
-    label = (
-        f"{job.piece_label}  |  page {page_num}/{total_pages}  "
-        f"(tile row {tile.row + 1}/{tile.rows}, col {tile.col + 1}/{tile.cols})  "
-        f"-- TILED: tape to its sibling pages using the crosshairs, verify the scale bar first"
-    )
-    _draw_footer(c, label, page_w, margin_mm, source_name, unit_note)
+    _draw_header(c, page_w, page_h, margin_mm, title)
     _draw_overview(c, tile, page_w, page_h, margin_mm)
 
     c.restoreState()
 
 
-def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm, margin_mm, source_name, unit_note):
+def _draw_packed_page(c, job: PackedPageJob, page_size_mm, margin_mm, title):
     page_w, page_h = page_size_mm
     printable_w, printable_h = page_w - 2 * margin_mm, page_h - 2 * margin_mm
 
@@ -179,7 +170,6 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
     clip.rect(_mm(margin_mm), _mm(margin_mm), _mm(printable_w), _mm(printable_h))
     c.clipPath(clip, stroke=0, fill=0)
 
-    piece_labels = []
     for placement in job.placements:
         def to_page(px, py, ox=placement.offset_x, oy=placement.offset_y):
             return (margin_mm + px + ox, margin_mm + py + oy)
@@ -188,8 +178,6 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
             c, to_page, placement.polylines,
             (margin_mm, margin_mm, margin_mm + printable_w, margin_mm + printable_h),
         )
-        if placement.footer_label:
-            piece_labels.append(placement.footer_label)
         if placement.centroid and (placement.cut_label or placement.shape_label):
             cx, cy = to_page(*placement.centroid)
             pw, ph = placement.piece_size_mm or (printable_w, printable_h)
@@ -198,13 +186,7 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)
     _draw_scale_bar(c, margin_mm)
-    summary = ", ".join(piece_labels) if piece_labels else "(empty page)"
-    label = (
-        f"{summary}  |  page {page_num}/{total_pages}  "
-        f"-- fits whole, not split  |  Print at 100% / Actual Size -- do NOT 'fit to page', "
-        f"verify the scale bar first"
-    )
-    _draw_footer(c, label, page_w, margin_mm, source_name, unit_note)
+    _draw_header(c, page_w, page_h, margin_mm, title)
 
     c.restoreState()
 
@@ -384,18 +366,19 @@ def _fmt_cm(cm: float) -> str:
 
 
 def _draw_scale_bar(c, margin_mm):
-    """An L-shaped, two-axis scale bar in the bottom-left margin, labeled in
-    cm on both arms, to sanity-check printer scaling on width AND height
-    independently -- a single 1-D ruler can't catch a printer or PDF viewer
-    that scales the two axes by different amounts.
+    """An L-shaped, two-axis scale bar just inside the printable area's
+    bottom-left corner, labeled in cm on both arms, to sanity-check printer
+    scaling on width AND height independently -- a single 1-D ruler can't
+    catch a printer or PDF viewer that scales the two axes by different
+    amounts.
 
-    Both arms live entirely within the margin band (the horizontal arm at
-    y < margin_mm, the vertical arm at x < margin_mm), the same unclipped
-    region crop marks and the footer use, so it's never drawn over the
-    actual pattern regardless of piece size or position.
+    Deliberately inside the print boundary (not out in the margin): many
+    printers have their own hardware non-printable border near the true
+    page edge, which could clip a scale bar sitting right at it -- placing
+    it just inside the printable rect means it always actually prints.
     """
-    x0 = min(3.0, margin_mm * 0.3)
-    y0 = min(3.0, margin_mm * 0.3)
+    x0 = margin_mm + 3.0
+    y0 = margin_mm + 3.0
     width_mm = SCALE_BAR_WIDTH_CM * 10.0
     height_mm = SCALE_BAR_HEIGHT_CM * 10.0
 
@@ -421,18 +404,13 @@ def _draw_scale_bar(c, margin_mm):
     c.restoreState()
 
 
-def _draw_footer(c, label, page_w, margin_mm, source_name, unit_note):
-    c.setFont("Helvetica", 7)
-    full_label = f"{os.path.basename(source_name)}  |  {label}"
-    c.drawCentredString(_mm(page_w / 2.0), _mm(margin_mm * 0.75), full_label)
-    if unit_note:
-        c.setFont("Helvetica", 6)
-        c.drawCentredString(_mm(page_w / 2.0), _mm(margin_mm * 0.35 + 3.5), unit_note)
-    c.setFont("Helvetica", 6)
-    c.drawRightString(
-        _mm(page_w - margin_mm), _mm(margin_mm * 0.35),
-        datetime.date.today().isoformat(),
-    )
+def _draw_header(c, page_w, page_h, margin_mm, title):
+    """Just the title, centered in the top margin -- plain text, no rule,
+    box, or other decoration underneath it.
+    """
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawCentredString(_mm(page_w / 2.0), _mm(page_h - margin_mm * 0.6), title)
 
 
 def _draw_overview(c, tile: Tile, page_w, page_h, margin_mm):

@@ -57,12 +57,12 @@ def _render_one_piece(tmp_path, shape_label, cut_label, piece_w_mm=60.0, piece_h
     piece_polylines = [[(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh), (-hw, -hh)]]
     placement = PiecePlacement(
         polylines=piece_polylines, offset_x=100.0, offset_y=100.0,
-        footer_label="piece 1/1", cut_label=cut_label, shape_label=shape_label,
+        cut_label=cut_label, shape_label=shape_label,
         centroid=(0.0, 0.0), piece_size_mm=(piece_w_mm, piece_h_mm),
     )
     pages = [PackedPageJob(placements=[placement])]
     out = str(tmp_path / "out.pdf")
-    draw_pdf(out, pages, PAGE_SIZES_MM["A4"], 10.0, "test.dxf", "")
+    draw_pdf(out, pages, PAGE_SIZES_MM["A4"], 10.0, "test.dxf")
     return _extract_content_streams(open(out, "rb").read())[0]
 
 
@@ -90,9 +90,9 @@ def _label_text_blocks(content: str):
         m = re.search(r"\((.*?(?<!\\))\) Tj", block)
         if m:
             text = _unescape_pdf_string(m.group(1))
-            # Skip page furniture (footer, scale bar, date) -- easy to tell
+            # Skip page furniture (header title, scale bar) -- easy to tell
             # apart since none of it looks like a piece label in these tests.
-            if "|" in text or text in ("5cm", "3cm") or re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+            if text in ("5cm", "3cm", "test.dxf"):
                 continue
             results.append((current_size, text, current_y))
     return results

@@ -97,14 +97,18 @@ control, so it defends against both:
    conversion factor (e.g. an SVG actually in 72 DPI Illustrator points
    would need `--units-per-mm 0.352778`).
 2. **Printer/PDF-viewer scaling.** Every single page — tiled or not — has an
-   L-shaped scale bar printed in the bottom-left margin: a 5cm horizontal
-   arm and a 3cm vertical arm, each labeled with its own length in cm.
-   Checking both axes separately (not just one ruler) catches a printer or
-   viewer that scales width and height by different amounts, not just
-   uniform "fit to page" shrinking. When you print, **turn off any "fit to
-   page" / "scale to fit" option and print at 100%**, then measure both
-   arms with an actual ruler before cutting any leather — if either doesn't
-   match its label, redo the print with scaling disabled.
+   L-shaped scale bar printed just inside the bottom-left corner of the
+   printable area: a 5cm horizontal arm and a 3cm vertical arm, each
+   labeled with its own length in cm. It sits inside the print boundary
+   rather than out in the margin, since many printers have their own
+   hardware non-printable border near the true page edge that could clip
+   anything sitting right at it. Checking both axes separately (not just
+   one ruler) catches a printer or viewer that scales width and height by
+   different amounts, not just uniform "fit to page" shrinking. When you
+   print, turn off any "fit to page" / "scale to fit" option and print at
+   100%, then measure both arms with an actual ruler before cutting any
+   leather — if either doesn't match its label, redo the print with
+   scaling disabled.
 
 ## How piece detection works
 
@@ -223,9 +227,10 @@ paper efficiently, in this order:
    than starting a fresh sheet and wasting paper.
 
 Pieces are never rotated to pack tighter, since leather has a grain
-direction and a pattern piece's orientation usually matters. Which pieces
-ended up on which page is named in the footer (e.g. `piece 3/8, piece 5/8`)
-rather than stamped on the artwork itself.
+direction and a pattern piece's orientation usually matters. Pages
+themselves carry no piece-identifying text beyond a `--label` name (if you
+gave one) printed on the shape itself — match a page back to the numbered
+list this tool prints on every run if you need to.
 
 Whatever ends up on a packed page — one piece alone, or several packed
 together — is then centered as a block within the printable area, both
@@ -248,8 +253,9 @@ is its own full page, clipped to its own rectangle, with:
 - **A small position diagram** in the corner showing which tile you're
   holding.
 
-Every page — packed or tiled — has a footer naming what's on it and a
-reminder to print at 100%. Cut along the crop marks, overlap adjacent
+Every page carries just a clean title (the source filename) at the top and
+the scale bar described above — no page numbers, piece lists, or print
+instructions cluttering it. Cut along the crop marks, overlap adjacent
 tiled sheets so the crosshairs line up exactly, then tape.
 
 ## Supported input

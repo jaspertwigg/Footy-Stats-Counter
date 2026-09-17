@@ -121,7 +121,6 @@ def main(argv=None) -> int:
     page_size = PAGE_SIZES_MM[args.page_size.upper()]
 
     lower = args.input.lower()
-    unit_note = ""
     if lower.endswith(".dxf"):
         from .dxf_reader import read_dxf
 
@@ -132,9 +131,8 @@ def main(argv=None) -> int:
                 "Check the printed scale bar on page 1 and pass --units-per-mm to correct if needed.",
                 file=sys.stderr,
             )
-            unit_note = "Units: assumed 1 drawing unit = 1mm (not declared in file)"
         else:
-            unit_note = f"Units: 1 drawing unit = {info['mm_per_unit']:.4g}mm"
+            print(f"Units: 1 drawing unit = {info['mm_per_unit']:.4g}mm", file=sys.stderr)
     elif lower.endswith(".svg"):
         from .svg_reader import read_svg
 
@@ -145,7 +143,8 @@ def main(argv=None) -> int:
                 "Check the printed scale bar on page 1 and pass --units-per-mm or --dpi to correct if needed.",
                 file=sys.stderr,
             )
-        unit_note = f"Scale: {info['detection_method']}"
+        else:
+            print(f"Scale: {info['detection_method']}", file=sys.stderr)
     elif lower.endswith(".lcc"):
         from .lcc_reader import read_lcc
 
@@ -157,9 +156,8 @@ def main(argv=None) -> int:
                 "Check the printed scale bar on page 1 and pass --units-per-mm to correct if needed.",
                 file=sys.stderr,
             )
-            unit_note = "Units: assumed 1 file unit = 1mm (LeathercraftCAD default)"
         else:
-            unit_note = f"Units: 1 file unit = {info['mm_per_unit']:.4g}mm"
+            print(f"Units: 1 file unit = {info['mm_per_unit']:.4g}mm", file=sys.stderr)
         if info["skipped_shape_types"]:
             print(
                 f"WARNING: skipped unsupported .lcc shape type(s): {info['skipped_shape_types']} "
@@ -259,7 +257,6 @@ def main(argv=None) -> int:
         placements = []
         for piece, ox, oy in packed_page.placements:
             num = piece_number[id(piece)]
-            footer_label = f"piece {num}/{total_pieces}"
             shape_label = labels.get(num)
             cut_label = cut_label_for(piece)
             centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
@@ -267,7 +264,7 @@ def main(argv=None) -> int:
             placements.append(
                 PiecePlacement(
                     polylines=piece.polylines, offset_x=ox, offset_y=oy,
-                    footer_label=footer_label, cut_label=cut_label, shape_label=shape_label,
+                    cut_label=cut_label, shape_label=shape_label,
                     centroid=centroid, piece_size_mm=piece_size,
                 )
             )
@@ -277,7 +274,6 @@ def main(argv=None) -> int:
     for piece, tiles in oversized_with_tiles:
         num = piece_number[id(piece)]
         pw, ph = piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1]
-        label = f"piece {num}/{total_pieces} ({pw:.0f}x{ph:.0f}mm)"
         cut_label = cut_label_for(piece)
         shape_label = labels.get(num)
         centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
@@ -292,7 +288,7 @@ def main(argv=None) -> int:
                     label_placed = True
             pages.append(
                 TilePageJob(
-                    polylines=piece.polylines, tile=tile, piece_label=label,
+                    polylines=piece.polylines, tile=tile,
                     cut_label=cut_label if owns_label else None,
                     shape_label=shape_label if owns_label else None,
                     cut_centroid=centroid if owns_label else None,
@@ -315,7 +311,7 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
 
-    draw_pdf(output, pages, page_size, args.margin_mm, args.input, unit_note)
+    draw_pdf(output, pages, page_size, args.margin_mm, args.input)
     print(f"Wrote {output} ({len(pages)} page(s) total)", file=sys.stderr)
     return 0
 

@@ -50,19 +50,22 @@ def _extract_content_streams(pdf_bytes: bytes):
     return out
 
 
+MARGIN_MM = 10.0
+
+
 def _build_single_page_pdf(tmp_path):
     piece = Piece(polylines=[[(0, 0), (20, 0), (20, 15), (0, 15), (0, 0)]], bbox=(0, 0, 20, 15))
-    packed_pages, _ = pack_pieces([piece], PAGE_SIZES_MM["A4"], margin_mm=10)
+    packed_pages, _ = pack_pieces([piece], PAGE_SIZES_MM["A4"], margin_mm=MARGIN_MM)
     pages = [
         PackedPageJob(
             placements=[
-                PiecePlacement(polylines=piece.polylines, offset_x=ox, offset_y=oy, footer_label="piece 1/1")
+                PiecePlacement(polylines=piece.polylines, offset_x=ox, offset_y=oy)
                 for p, ox, oy in packed_pages[0].placements
             ]
         )
     ]
     out = str(tmp_path / "out.pdf")
-    draw_pdf(out, pages, PAGE_SIZES_MM["A4"], 10.0, "test.dxf", "")
+    draw_pdf(out, pages, PAGE_SIZES_MM["A4"], MARGIN_MM, "test.dxf")
     return open(out, "rb").read()
 
 
@@ -91,3 +94,27 @@ def test_scale_bar_arms_are_true_length_and_perpendicular(tmp_path):
 
     assert any(abs(length - SCALE_BAR_WIDTH_CM * 10.0) < 0.05 for length in horizontal_lengths)
     assert any(abs(length - SCALE_BAR_HEIGHT_CM * 10.0) < 0.05 for length in vertical_lengths)
+
+
+def test_scale_bar_sits_inside_the_printable_boundary(tmp_path):
+    """The scale bar's own corner must be at or past the printable area's
+    edge (x, y >= margin_mm), not out in the margin where a printer's own
+    non-printable border could clip it before it's ever measurable.
+    """
+    text = _extract_content_streams(_build_single_page_pdf(tmp_path))[0]
+    paths = re.findall(r"((?:[\d.]+ [\d.]+ m\s*)(?:[\d.]+ [\d.]+ l\s*)*S)", text)
+
+    corner_candidates = []
+    for p in paths:
+        coords = [(float(x) * MM_PER_PT, float(y) * MM_PER_PT) for x, y in re.findall(r"([\d.]+) ([\d.]+) [ml]", p)]
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+        w, h = max(xs) - min(xs), max(ys) - min(ys)
+        if (h < 1e-6 and abs(w - SCALE_BAR_WIDTH_CM * 10.0) < 0.05) or (
+            w < 1e-6 and abs(h - SCALE_BAR_HEIGHT_CM * 10.0) < 0.05
+        ):
+            corner_candidates.append(min(xs))
+            corner_candidates.append(min(ys))
+
+    assert corner_candidates, "scale bar arms not found"
+    assert all(v >= MARGIN_MM - 1e-6 for v in corner_candidates)
