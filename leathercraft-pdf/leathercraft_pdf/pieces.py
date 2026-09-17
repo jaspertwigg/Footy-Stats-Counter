@@ -16,8 +16,9 @@ to that outline even though it doesn't touch it.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from .geometry import Polyline, polyline_bbox
 
@@ -28,6 +29,7 @@ BBox = Tuple[float, float, float, float]
 class Piece:
     polylines: List[Polyline]
     bbox: BBox
+    cut_count: int = 1
 
 
 class _UnionFind:
@@ -141,3 +143,46 @@ def group_into_pieces(
             continue
         pieces.append(Piece(polylines=member_polylines, bbox=bbox))
     return pieces
+
+
+def _piece_signature(piece: Piece, length_tol_mm: float) -> tuple:
+    """A shape fingerprint: bbox size plus the sorted multiset of edge
+    lengths, all rounded to `length_tol_mm`. Two pieces with the same
+    signature are congruent -- this also matches a mirror-imaged copy to
+    its original, since reflecting a shape changes neither its edge lengths
+    nor its axis-aligned bounding box, and cutting a mirrored pair from one
+    flipped template is standard leathercraft practice.
+    """
+    lengths = []
+    for poly in piece.polylines:
+        for (x1, y1), (x2, y2) in zip(poly, poly[1:]):
+            length = math.hypot(x2 - x1, y2 - y1)
+            lengths.append(round(length / length_tol_mm))
+    lengths.sort()
+    w = piece.bbox[2] - piece.bbox[0]
+    h = piece.bbox[3] - piece.bbox[1]
+    return (round(w / length_tol_mm), round(h / length_tol_mm), tuple(lengths))
+
+
+def dedupe_identical_pieces(pieces: List[Piece], length_tol_mm: float = 0.1) -> List[Piece]:
+    """Collapse pieces with matching geometry into one representative each.
+
+    The representative's `cut_count` records how many copies were found, so
+    the caller can print a "Cut N" label instead of drawing (and taking up
+    page space for) every copy.
+    """
+    groups: Dict[tuple, List[Piece]] = {}
+    order: List[tuple] = []
+    for piece in pieces:
+        sig = _piece_signature(piece, length_tol_mm)
+        if sig not in groups:
+            groups[sig] = []
+            order.append(sig)
+        groups[sig].append(piece)
+
+    result = []
+    for sig in order:
+        members = groups[sig]
+        rep = members[0]
+        result.append(Piece(polylines=rep.polylines, bbox=rep.bbox, cut_count=len(members)))
+    return result

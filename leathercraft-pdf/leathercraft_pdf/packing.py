@@ -139,4 +139,30 @@ def pack_pieces(
     if current:
         pages.append(PackedPage(placements=current))
 
+    pages = [_center_page(pg, printable_w, printable_h) for pg in pages]
+
     return pages, oversized
+
+
+def _center_page(page: PackedPage, printable_w: float, printable_h: float) -> PackedPage:
+    """Shift a page's whole arrangement of pieces so it's centered in the
+    printable area, both axes -- one piece alone ends up in the middle of
+    the page; several pieces are centered as one block, preserving their
+    relative arrangement rather than each piece being centered separately.
+    """
+    if not page.placements:
+        return page
+
+    x0s, y0s, x1s, y1s = [], [], [], []
+    for piece, ox, oy in page.placements:
+        minx, miny, maxx, maxy = piece.bbox
+        x0s.append(minx + ox)
+        y0s.append(miny + oy)
+        x1s.append(maxx + ox)
+        y1s.append(maxy + oy)
+    group_x0, group_y0 = min(x0s), min(y0s)
+    group_w, group_h = max(x1s) - group_x0, max(y1s) - group_y0
+
+    dx = (printable_w - group_w) / 2.0 - group_x0
+    dy = (printable_h - group_h) / 2.0 - group_y0
+    return PackedPage(placements=[(piece, ox + dx, oy + dy) for piece, ox, oy in page.placements])

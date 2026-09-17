@@ -165,3 +165,29 @@ def polyline_bbox(polylines: List[Polyline]):
     if minx is math.inf:
         return None
     return (minx, miny, maxx, maxy)
+
+
+def polylines_centroid(polylines: List[Polyline]) -> Tuple[float, float]:
+    """Approximate the visual center of a shape made of several polylines.
+
+    Used to place a "Cut N" label inside a piece. Averages each polyline's
+    own midpoint, then averages those -- giving a decorative sub-element
+    (say, a 32-point flattened stitch-hole circle) the same weight as a
+    single straight edge, rather than letting it dominate a plain point
+    average just because it was sampled into more points. This isn't a
+    true area centroid, but for the roughly convex outlines typical of
+    leathercraft pieces it lands solidly inside the shape, which is all a
+    label placement needs.
+    """
+    sub_centroids = []
+    for poly in polylines:
+        if not poly:
+            continue
+        sx = sum(p[0] for p in poly)
+        sy = sum(p[1] for p in poly)
+        sub_centroids.append((sx / len(poly), sy / len(poly)))
+    if not sub_centroids:
+        return (0.0, 0.0)
+    cx = sum(p[0] for p in sub_centroids) / len(sub_centroids)
+    cy = sum(p[1] for p in sub_centroids) / len(sub_centroids)
+    return (cx, cy)

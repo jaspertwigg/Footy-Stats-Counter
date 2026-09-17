@@ -57,8 +57,9 @@ Force a specific orientation with `--orientation portrait` / `--orientation land
 Try it on the bundled examples:
 
 ```bash
-python make_pdf.py examples/simple_panel.dxf      # one piece, fits on one page
-python make_pdf.py examples/large_bag_panel.dxf   # one 500x350mm piece -> tiled across 4 A4 pages (landscape)
+python make_pdf.py examples/simple_panel.dxf        # one piece, fits on one page, centered
+python make_pdf.py examples/large_bag_panel.dxf     # one 500x350mm piece -> tiled across 4 A4 pages (landscape)
+python make_pdf.py examples/duplicate_straps.dxf    # 3 identical straps -> drawn once, labeled "Cut 3"
 ```
 
 ### Options
@@ -122,11 +123,29 @@ there are attached at real vertices — but if the piece count the tool
 reports looks higher than the actual number of parts in your pattern,
 that's the likely cause; let us know and we can extend the detection.
 
+## Duplicate pieces
+
+Wallets, bags, and most leathercraft patterns reuse the same shape more than
+once (two strap pieces, four matching card slots, a mirrored left/right
+body panel). Before laying out pages, identical pieces are detected — same
+bounding-box size and the same multiset of edge lengths — and collapsed to
+a single representative, printed once with a bold **"Cut N"** label at its
+center instead of drawing every copy. A mirror-imaged copy counts as
+identical too (reflecting a shape changes neither its edge lengths nor its
+bounding box), since cutting a mirrored pair from one flipped template is
+standard practice. Detection is exact-geometry, not "looks about the same
+size" — two different shapes that happen to share a bounding box are never
+merged. The terminal output says what happened:
+
+```
+Found 8 piece(s), 5 distinct shape(s) after merging identical/mirrored duplicates (2 copies, 2 copies, 2 copies) -- each is drawn once with a 'Cut N' label.
+```
+
 ## How pages are laid out
 
-Once pieces are known, each one is either **packed** (if it fits on one
-page) or **tiled** (if it's too big for any single page) — never both, and
-a packed piece is never split.
+Once pieces are known (after deduplication), each one is either **packed**
+(if it fits on one page) or **tiled** (if it's too big for any single page)
+— never both, and a packed piece is never split.
 
 **Packed pages** hold one or more whole pieces, placed edge to edge to use
 paper efficiently, in this order:
@@ -145,6 +164,13 @@ Pieces are never rotated to pack tighter, since leather has a grain
 direction and a pattern piece's orientation usually matters. Which pieces
 ended up on which page is named in the footer (e.g. `piece 3/8, piece 5/8`)
 rather than stamped on the artwork itself.
+
+Whatever ends up on a packed page — one piece alone, or several packed
+together — is then centered as a block within the printable area, both
+horizontally and vertically. A single piece sits in the middle of the page;
+several pieces keep their packed arrangement relative to each other and
+that whole group is centered together, rather than each piece being
+centered separately.
 
 **Tiled pages** are used only for a piece too big for one sheet. Each tile
 is its own full page, clipped to its own rectangle, with:

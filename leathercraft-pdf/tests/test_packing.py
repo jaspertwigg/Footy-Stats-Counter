@@ -1,3 +1,5 @@
+import pytest
+
 from leathercraft_pdf.layout import PAGE_SIZES_MM
 from leathercraft_pdf.packing import _group_by_similar_size, pack_pieces
 from leathercraft_pdf.pieces import Piece
@@ -85,6 +87,52 @@ def test_similar_sized_pieces_land_on_the_same_page_when_they_fit_together():
     medium_count = sum(1 for pg in medium_pages for p, _, _ in pg.placements if round(p.bbox[2] - p.bbox[0]) == 80)
     assert medium_count == 4
     assert len(medium_pages) == 1
+
+
+def test_single_piece_page_is_centered():
+    page = PAGE_SIZES_MM["A4"]
+    margin = 10
+    printable_w, printable_h = page[0] - 2 * margin, page[1] - 2 * margin
+    piece = _piece(60, 40)
+    packed_pages, _ = pack_pieces([piece], page, margin_mm=margin)
+    assert len(packed_pages) == 1
+    (p, ox, oy), = packed_pages[0].placements
+    minx, miny, maxx, maxy = p.bbox
+    x0, y0 = minx + ox, miny + oy
+    x1, y1 = maxx + ox, maxy + oy
+    assert x0 == pytest.approx((printable_w - 60) / 2.0)
+    assert y0 == pytest.approx((printable_h - 40) / 2.0)
+    assert x1 == pytest.approx(x0 + 60)
+    assert y1 == pytest.approx(y0 + 40)
+
+
+def test_multiple_pieces_on_a_page_are_centered_as_one_block():
+    page = PAGE_SIZES_MM["A4"]
+    margin = 10
+    printable_w, printable_h = page[0] - 2 * margin, page[1] - 2 * margin
+    # 4 identical small pieces: the top-2-solo rule takes 2 of them onto
+    # their own pages, leaving 2 to share one page as a block.
+    pieces = [_piece(30, 20) for _ in range(4)]
+    packed_pages, _ = pack_pieces(pieces, page, margin_mm=margin)
+    shared_pages = [pg for pg in packed_pages if len(pg.placements) > 1]
+    assert len(shared_pages) == 1
+    placements = shared_pages[0].placements
+    assert len(placements) == 2
+
+    xs0, ys0, xs1, ys1 = [], [], [], []
+    for p, ox, oy in placements:
+        minx, miny, maxx, maxy = p.bbox
+        xs0.append(minx + ox)
+        ys0.append(miny + oy)
+        xs1.append(maxx + ox)
+        ys1.append(maxy + oy)
+    group_x0, group_y0 = min(xs0), min(ys0)
+    group_x1, group_y1 = max(xs1), max(ys1)
+
+    # The block's own margins (gap to the printable edges) should be equal
+    # on opposite sides -- i.e. the block as a whole is centered.
+    assert group_x0 == pytest.approx(printable_w - group_x1)
+    assert group_y0 == pytest.approx(printable_h - group_y1)
 
 
 def test_placed_pieces_on_the_same_page_do_not_overlap():

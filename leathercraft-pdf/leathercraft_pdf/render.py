@@ -21,7 +21,7 @@ from __future__ import annotations
 import datetime
 import os
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from reportlab.pdfgen import canvas as rl_canvas
 
@@ -34,12 +34,25 @@ REG_GRID_SPACING_MM = 50.0
 REG_MARK_SIZE_MM = 3.0
 RULER_LENGTH_MM = 50.0
 LINE_WIDTH_MM = 0.15
+CUT_LABEL_FONT_SIZE = 12
+
+
+@dataclass
+class PiecePlacement:
+    polylines: List[Polyline]
+    offset_x: float
+    offset_y: float
+    footer_label: str
+    # Set only for a deduped piece with more than one copy, e.g. "Cut 2".
+    cut_label: Optional[str] = None
+    # Pattern-space (px, py), before offset_x/offset_y -- where to center
+    # cut_label, if set.
+    centroid: Optional[Tuple[float, float]] = None
 
 
 @dataclass
 class PackedPageJob:
-    # (polylines, x-offset mm, y-offset mm, label) per piece on this page
-    placements: List[Tuple[List[Polyline], float, float, str]] = field(default_factory=list)
+    placements: List[PiecePlacement] = field(default_factory=list)
 
 
 @dataclass
@@ -47,6 +60,10 @@ class TilePageJob:
     polylines: List[Polyline]
     tile: Tile
     piece_label: str
+    # Only set on the one tile page that "owns" showing this piece's cut
+    # label (its centroid falls within that tile's rect).
+    cut_label: Optional[str] = None
+    cut_centroid: Optional[Tuple[float, float]] = None
 
 
 def _mm(v: float) -> float:
@@ -112,6 +129,9 @@ def _draw_tile_page(c, job: TilePageJob, page_num, total_pages, page_size_mm, ma
     visible = [poly for poly in job.polylines if _overlaps(poly, x0, y0, x1, y1)]
     _stroke_polylines(c, to_page, visible, (margin_mm, margin_mm, margin_mm + tile_w, margin_mm + tile_h))
     _draw_registration_grid(c, to_page, x0, y0, x1, y1)
+    if job.cut_label and job.cut_centroid:
+        cx, cy = to_page(*job.cut_centroid)
+        _draw_cut_label(c, cx, cy, job.cut_label)
     c.restoreState()
 
     # --- Page furniture: crop marks, ruler, footer, overview (unclipped) ---
@@ -139,13 +159,19 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
     c.clipPath(clip, stroke=0, fill=0)
 
     piece_labels = []
-    for polylines, offset_x, offset_y, label in job.placements:
-        def to_page(px, py, ox=offset_x, oy=offset_y):
+    for placement in job.placements:
+        def to_page(px, py, ox=placement.offset_x, oy=placement.offset_y):
             return (margin_mm + px + ox, margin_mm + py + oy)
 
-        _stroke_polylines(c, to_page, polylines, (margin_mm, margin_mm, margin_mm + printable_w, margin_mm + printable_h))
-        if label:
-            piece_labels.append(label)
+        _stroke_polylines(
+            c, to_page, placement.polylines,
+            (margin_mm, margin_mm, margin_mm + printable_w, margin_mm + printable_h),
+        )
+        if placement.footer_label:
+            piece_labels.append(placement.footer_label)
+        if placement.cut_label and placement.centroid:
+            cx, cy = to_page(*placement.centroid)
+            _draw_cut_label(c, cx, cy, placement.cut_label)
     c.restoreState()
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)
@@ -202,6 +228,17 @@ def _draw_registration_grid(c, to_page, x0, y0, x1, y1):
         gx += REG_GRID_SPACING_MM
 
     c.setStrokeColorRGB(0, 0, 0)
+
+
+def _draw_cut_label(c, x_mm, y_mm, text):
+    """Bold text centered on a point, e.g. "Cut 2" in the middle of a shape
+    that's only drawn once but needs to be cut multiple times.
+    """
+    c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
+    c.setFillColorRGB(0, 0, 0)
+    # drawCentredString positions the baseline at y; nudge down about half
+    # the cap-height so the text is vertically centered on the point too.
+    c.drawCentredString(_mm(x_mm), _mm(y_mm) - CUT_LABEL_FONT_SIZE * 0.35, text)
 
 
 def _draw_cross(c, px_mm, py_mm, size_mm):

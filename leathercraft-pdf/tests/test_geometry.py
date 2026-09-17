@@ -5,6 +5,7 @@ from leathercraft_pdf.geometry import (
     flatten_quadratic_bezier,
     flatten_svg_arc,
     polyline_bbox,
+    polylines_centroid,
 )
 
 
@@ -45,3 +46,32 @@ def test_polyline_bbox():
 
 def test_polyline_bbox_empty():
     assert polyline_bbox([]) is None
+
+
+def test_centroid_of_a_rectangle_is_its_center():
+    rect_edges = [
+        [(0, 0), (100, 0)],
+        [(100, 0), (100, 50)],
+        [(100, 50), (0, 50)],
+        [(0, 50), (0, 0)],
+    ]
+    cx, cy = polylines_centroid(rect_edges)
+    assert abs(cx - 50) < 1e-6
+    assert abs(cy - 25) < 1e-6
+
+
+def test_centroid_is_not_skewed_by_a_densely_sampled_sub_element():
+    # A rectangle outline (4 edges) plus a finely-sampled "hole" circle near
+    # one corner. Naively averaging every point would drag the centroid
+    # toward the circle just because it contributed many more points.
+    rect_edges = [
+        [(0, 0), (100, 0)],
+        [(100, 0), (100, 50)],
+        [(100, 50), (0, 50)],
+        [(0, 50), (0, 0)],
+    ]
+    circle_near_corner = [(95 + math.cos(t) * 2, 45 + math.sin(t) * 2) for t in [i / 20 * 2 * math.pi for i in range(40)]]
+    cx, cy = polylines_centroid(rect_edges + [circle_near_corner])
+    # Still much closer to the rectangle's true center (50, 25) than to the
+    # circle near (95, 45).
+    assert math.hypot(cx - 50, cy - 25) < math.hypot(cx - 95, cy - 45)

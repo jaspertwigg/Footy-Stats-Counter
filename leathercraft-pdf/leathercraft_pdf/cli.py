@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox
+from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox, polylines_centroid
 from .layout import PAGE_SIZES_MM, compute_tiles
 from .packing import pack_pieces
-from .pieces import group_into_pieces
-from .render import PackedPageJob, TilePageJob, draw_pdf
+from .pieces import dedupe_identical_pieces, group_into_pieces
+from .render import PackedPageJob, PiecePlacement, TilePageJob, draw_pdf
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -147,8 +147,18 @@ def main(argv=None) -> int:
     width, height = maxx - minx, maxy - miny
     print(f"Overall canvas size: {width:.1f}mm x {height:.1f}mm", file=sys.stderr)
 
-    pieces = group_into_pieces(polylines)
-    print(f"Found {len(pieces)} separate piece(s) in the pattern.", file=sys.stderr)
+    raw_pieces = group_into_pieces(polylines)
+    pieces = dedupe_identical_pieces(raw_pieces)
+    duplicate_count = len(raw_pieces) - len(pieces)
+    if duplicate_count:
+        dupes = ", ".join(f"{p.cut_count} copies" for p in pieces if p.cut_count > 1)
+        print(
+            f"Found {len(raw_pieces)} piece(s), {len(pieces)} distinct shape(s) after merging "
+            f"identical/mirrored duplicates ({dupes}) -- each is drawn once with a 'Cut N' label.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"Found {len(pieces)} separate piece(s) in the pattern.", file=sys.stderr)
 
     landscape_size = (page_size[1], page_size[0])
     if args.orientation == "portrait":
@@ -179,12 +189,21 @@ def main(argv=None) -> int:
     piece_number = {id(p): i + 1 for i, p in enumerate(ordered)}
     total_pieces = len(pieces)
 
+    def cut_label_for(piece):
+        return f"Cut {piece.cut_count}" if piece.cut_count > 1 else None
+
     pages = []
     for packed_page in packed_pages:
         placements = []
         for piece, ox, oy in packed_page.placements:
-            label = f"piece {piece_number[id(piece)]}/{total_pieces}"
-            placements.append((piece.polylines, ox, oy, label))
+            footer_label = f"piece {piece_number[id(piece)]}/{total_pieces}"
+            centroid = polylines_centroid(piece.polylines) if piece.cut_count > 1 else None
+            placements.append(
+                PiecePlacement(
+                    polylines=piece.polylines, offset_x=ox, offset_y=oy,
+                    footer_label=footer_label, cut_label=cut_label_for(piece), centroid=centroid,
+                )
+            )
         pages.append(PackedPageJob(placements=placements))
 
     tiling_summary = []
@@ -192,8 +211,24 @@ def main(argv=None) -> int:
         num = piece_number[id(piece)]
         pw, ph = piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1]
         label = f"piece {num}/{total_pieces} ({pw:.0f}x{ph:.0f}mm)"
+        cut_label = cut_label_for(piece)
+        centroid = polylines_centroid(piece.polylines) if cut_label else None
+        label_placed = False
         for tile in tiles:
-            pages.append(TilePageJob(polylines=piece.polylines, tile=tile, piece_label=label))
+            owns_label = False
+            if cut_label and not label_placed:
+                cx, cy = centroid
+                x0, y0, x1, y1 = tile.rect
+                if x0 <= cx <= x1 and y0 <= cy <= y1:
+                    owns_label = True
+                    label_placed = True
+            pages.append(
+                TilePageJob(
+                    polylines=piece.polylines, tile=tile, piece_label=label,
+                    cut_label=cut_label if owns_label else None,
+                    cut_centroid=centroid if owns_label else None,
+                )
+            )
         tiling_summary.append(f"piece {num} ({pw:.0f}x{ph:.0f}mm) -> {tiles[-1].rows}x{tiles[-1].cols} pages")
 
     if packed_pages:
