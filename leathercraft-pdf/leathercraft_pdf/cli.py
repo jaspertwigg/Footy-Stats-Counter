@@ -6,7 +6,7 @@ import sys
 from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox, polylines_centroid
 from .layout import PAGE_SIZES_MM, compute_tiles
 from .packing import pack_pieces
-from .pieces import dedupe_identical_pieces, group_into_pieces, is_irregular_shape
+from .pieces import dedupe_identical_pieces, flip_vertical, group_into_pieces, is_irregular_shape
 from .render import PackedPageJob, PiecePlacement, TilePageJob, draw_pdf
 
 
@@ -59,9 +59,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--label", action="append", default=[], metavar="N=TEXT",
         help=(
             "Name a piece by its number, e.g. --label 1='Outer Shell' -- the "
-            "name is printed on that shape (smaller than its 'Cut N', if any). "
-            "Piece numbers are shown in the summary this tool prints on every "
-            "run. Repeatable."
+            "name is printed on that shape, along with its 'Cut N' in "
+            "parentheses if it has duplicates. Piece numbers are shown in "
+            "the summary this tool prints on every run. Repeatable."
+        ),
+    )
+    p.add_argument(
+        "--flip", action="append", default=[], type=int, metavar="N",
+        help=(
+            "Mirror piece number N top-to-bottom in place (equivalent to a "
+            "180 degree rotation for a shape that's already left-right "
+            "symmetric). Use when a piece was reconstructed upside-down "
+            "relative to how it should read once assembled. Repeatable."
         ),
     )
     return p
@@ -224,6 +233,14 @@ def main(argv=None) -> int:
     if labels is None:
         return 2
 
+    flipped_nums = set()
+    for num in args.flip:
+        if not (1 <= num <= total_pieces):
+            print(f"WARNING: --flip {num} doesn't match any piece (there are {total_pieces})", file=sys.stderr)
+            continue
+        flip_vertical(ordered[num - 1])
+        flipped_nums.add(num)
+
     print("Pieces found (use --label N=text to name one, e.g. --label 1='Outer Shell'):", file=sys.stderr)
     for p in ordered:
         num = piece_number[id(p)]
@@ -231,7 +248,8 @@ def main(argv=None) -> int:
         tag = f"Cut {p.cut_count}" if p.cut_count > 1 else "single"
         shape_note = ", irregular/notched shape" if is_irregular_shape(p) else ""
         named = f" -> {labels[num]!r}" if num in labels else ""
-        print(f"  piece {num}/{total_pieces}: {pw:.0f}x{ph:.0f}mm ({tag}{shape_note}){named}", file=sys.stderr)
+        flipped_note = " [flipped]" if num in flipped_nums else ""
+        print(f"  piece {num}/{total_pieces}: {pw:.0f}x{ph:.0f}mm ({tag}{shape_note}){named}{flipped_note}", file=sys.stderr)
 
     def cut_label_for(piece):
         return f"Cut {piece.cut_count}" if piece.cut_count > 1 else None

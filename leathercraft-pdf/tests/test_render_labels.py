@@ -1,6 +1,7 @@
-"""Verifies, from the actual PDF bytes, that a piece's name (from --label)
-and its "Cut N" count render with "Cut N" as the visually dominant one --
-bigger and bold -- and the name stacked above it. Decodes the real content
+"""Verifies, from the actual PDF bytes, how a piece's name (from --label)
+and its "Cut N" count combine into one label -- name and count in one
+consistent font size, the count in parentheses -- and that a "horizontal"
+piece's label rotates 90 degrees clockwise. Decodes the real content
 stream rather than trusting the drawing code, the same way
 test_render_scale_bar.py does.
 """
@@ -11,9 +12,7 @@ import zlib
 
 from leathercraft_pdf.layout import PAGE_SIZES_MM
 from leathercraft_pdf.render import (
-    CUT_LABEL_FONT_SIZE,
-    SHAPE_LABEL_ALONE_FONT_SIZE,
-    SHAPE_LABEL_FONT_SIZE,
+    PIECE_LABEL_FONT_SIZE,
     PackedPageJob,
     PiecePlacement,
     draw_pdf,
@@ -47,31 +46,6 @@ def _extract_content_streams(pdf_bytes: bytes):
     return out
 
 
-def _text_blocks_with_font_size(content: str):
-    """Reportlab emits one BT..ET block per font-size change and another
-    per text draw, in order -- pair each drawn string with the size/weight
-    that was active when it was drawn.
-    """
-    blocks = re.findall(r"BT(.*?)ET", content, re.DOTALL)
-    results = []
-    current_size = None
-    current_bold = None
-    for b in blocks:
-        font_match = re.search(r"/(F\d+) ([\d.]+) Tf", b)
-        if font_match:
-            current_size = float(font_match.group(2))
-            # Track which resource name was last set for boldness inference
-            # via a second pass isn't reliable across pages; instead treat
-            # each distinct font resource as its own "weight bucket" and
-            # compare sizes between the two known texts directly.
-            current_bold = font_match.group(1)
-            continue
-        text_match = re.search(r"\((.*?)\) Tj", b)
-        if text_match:
-            results.append((text_match.group(1), current_size, current_bold))
-    return results
-
-
 def _render_one_piece(tmp_path, shape_label, cut_label):
     piece_polylines = [[(0, 0), (20, 0), (20, 15), (0, 15), (0, 0)]]
     placement = PiecePlacement(
@@ -85,41 +59,58 @@ def _render_one_piece(tmp_path, shape_label, cut_label):
     return _extract_content_streams(open(out, "rb").read())[0]
 
 
-def test_cut_label_is_bigger_than_shape_label_when_both_present(tmp_path):
+def _unescape_pdf_string(s: str) -> str:
+    # reportlab escapes literal ( ) \ inside PDF string literals.
+    return s.replace("\\(", "(").replace("\\)", ")").replace("\\\\", "\\")
+
+
+def _drawn_texts(content: str):
+    """All strings actually drawn with Tj, in document order, unescaped."""
+    return [_unescape_pdf_string(m) for m in re.findall(r"\((.*?(?<!\\))\) Tj", content)]
+
+
+def _font_size_for_text(content: str, text: str):
+    """Font size active when `text` was drawn.
+
+    reportlab emits one BT..ET block per font-size change and a separate
+    one per text draw, in that order -- track the most recently set size
+    as we scan and report it against a Tj block that matches `text`.
+    """
+    target = text.replace("(", "\\(").replace(")", "\\)")
+    current_size = None
+    for block in re.findall(r"BT(.*?)ET", content, re.DOTALL):
+        m = re.search(r"/F\d+ ([\d.]+) Tf", block)
+        if m:
+            current_size = float(m.group(1))
+            continue
+        if f"({target}) Tj" in block:
+            return current_size
+    return None
+
+
+def test_name_and_cut_count_combine_into_one_bracketed_line(tmp_path):
     content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
-    texts = _text_blocks_with_font_size(content)
-
-    shape_entries = [t for t in texts if t[0] == "Outer Shell"]
-    cut_entries = [t for t in texts if t[0] == "Cut 2"]
-    assert len(shape_entries) == 1
-    assert len(cut_entries) == 1
-
-    shape_size = shape_entries[0][1]
-    cut_size = cut_entries[0][1]
-    assert cut_size > shape_size
-    assert cut_size == CUT_LABEL_FONT_SIZE
-    assert shape_size == SHAPE_LABEL_FONT_SIZE
+    assert "Outer Shell (Cut 2)" in _drawn_texts(content)
 
 
-def test_shape_label_alone_uses_the_larger_solo_size(tmp_path):
+def test_cut_label_alone_is_still_parenthesized(tmp_path):
+    content = _render_one_piece(tmp_path, shape_label=None, cut_label="Cut 3")
+    assert "(Cut 3)" in _drawn_texts(content)
+
+
+def test_name_alone_has_no_brackets(tmp_path):
     content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label=None)
-    texts = _text_blocks_with_font_size(content)
-    shape_entries = [t for t in texts if t[0] == "Outer Shell"]
-    assert len(shape_entries) == 1
-    assert shape_entries[0][1] == SHAPE_LABEL_ALONE_FONT_SIZE
-    # Solo, it should be drawn larger than it would be alongside a cut label.
-    assert SHAPE_LABEL_ALONE_FONT_SIZE > SHAPE_LABEL_FONT_SIZE
+    assert "Outer Shell" in _drawn_texts(content)
 
 
-def test_shape_label_is_positioned_above_cut_label(tmp_path):
-    content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
-    positions = {}
-    # Text is drawn relative to a translated (and possibly rotated) local
-    # origin, so its Tm offset can be negative -- allow a leading '-'.
-    for m in re.finditer(r"1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm \((.*?)\) Tj", content):
-        x, y, text = m.groups()
-        positions[text] = float(y)
-    assert positions["Outer Shell"] > positions["Cut 2"]
+def test_all_label_variants_use_the_same_font_size(tmp_path):
+    combined = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
+    name_only = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label=None)
+    cut_only = _render_one_piece(tmp_path, shape_label=None, cut_label="Cut 3")
+
+    assert _font_size_for_text(combined, "Outer Shell (Cut 2)") == PIECE_LABEL_FONT_SIZE
+    assert _font_size_for_text(name_only, "Outer Shell") == PIECE_LABEL_FONT_SIZE
+    assert _font_size_for_text(cut_only, "(Cut 3)") == PIECE_LABEL_FONT_SIZE
 
 
 def test_horizontal_named_piece_gets_rotated_text(tmp_path):

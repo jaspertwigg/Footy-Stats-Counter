@@ -188,6 +188,20 @@ def dedupe_identical_pieces(pieces: List[Piece], length_tol_mm: float = 0.1) -> 
     return result
 
 
+def flip_vertical(piece: Piece) -> None:
+    """Mirror a piece's geometry top-to-bottom about its own bbox center,
+    in place.
+
+    The bounding box is unchanged (flipping about its own center keeps the
+    same rectangle), only the internal geometry's orientation changes --
+    useful when a piece was reconstructed the way the CAD file happened to
+    draw it rather than the way it should read once cut and assembled.
+    """
+    miny, maxy = piece.bbox[1], piece.bbox[3]
+    cy = (miny + maxy) / 2.0
+    piece.polylines = [[(x, 2 * cy - y) for x, y in poly] for poly in piece.polylines]
+
+
 def is_irregular_shape(piece: Piece, length_tol_mm: float = 0.5) -> bool:
     """True if the piece has at least one substantial edge that's neither
     its bounding-box width nor height -- i.e. it's not a plain rectangle

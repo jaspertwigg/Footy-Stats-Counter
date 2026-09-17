@@ -33,9 +33,7 @@ MM_TO_PT = 72.0 / 25.4
 REG_GRID_SPACING_MM = 50.0
 REG_MARK_SIZE_MM = 3.0
 LINE_WIDTH_MM = 0.15
-CUT_LABEL_FONT_SIZE = 14
-SHAPE_LABEL_FONT_SIZE = 8  # when shown alongside a cut label -- deliberately smaller
-SHAPE_LABEL_ALONE_FONT_SIZE = 11  # when it's the only text on the piece
+PIECE_LABEL_FONT_SIZE = 20  # one size for every piece label, name and cut count alike
 SCALE_BAR_WIDTH_CM = 5.0
 SCALE_BAR_HEIGHT_CM = 3.0
 
@@ -49,8 +47,8 @@ class PiecePlacement:
     # Set only for a deduped piece with more than one copy, e.g. "Cut 2".
     cut_label: Optional[str] = None
     # A user-supplied name for this piece (--label), e.g. "Outer Shell".
-    # Drawn smaller than cut_label so the cut count stays the more
-    # prominent, actionable text.
+    # Combined with cut_label (if set) into one line, e.g.
+    # "Outer Shell (Cut 2)".
     shape_label: Optional[str] = None
     # Pattern-space (px, py), before offset_x/offset_y -- where to center
     # cut_label/shape_label, if either is set.
@@ -240,19 +238,25 @@ def _draw_registration_grid(c, to_page, x0, y0, x1, y1):
 
 
 def _draw_piece_labels(c, x_mm, y_mm, shape_label, cut_label):
-    """Draw a piece's name and/or its "Cut N" count, centered on a point.
+    """Draw a piece's name and/or its "Cut N" count, centered on a point,
+    as one line of text in one consistent bold size -- e.g.
+    "Vertical Card Divider (Cut 2)". The cut count is parenthesized so it
+    still reads as separate, supplementary information even though nothing
+    about its size or weight sets it apart anymore.
 
-    "Cut N" is the actionable instruction (how many times to trace this
-    shape), so it's always the visually dominant one -- bigger and bold.
-    A shape name (from --label) is secondary: smaller, regular weight, and
-    placed just above the cut count when both are present. With no cut
-    count, the shape name is drawn a bit larger since it's then the only
-    text on the piece.
-
-    A shape whose name contains "horizontal" gets its label(s) rotated 90
+    A shape whose name contains "horizontal" gets its label rotated 90
     degrees clockwise -- e.g. a narrow "Horizontal Pocket Divider" piece
     where sideways text reads more naturally along its length.
     """
+    if shape_label and cut_label:
+        text = f"{shape_label} ({cut_label})"
+    elif shape_label:
+        text = shape_label
+    elif cut_label:
+        text = f"({cut_label})"
+    else:
+        return
+
     rotate_cw = bool(shape_label) and "horizontal" in shape_label.lower()
 
     c.saveState()
@@ -260,17 +264,8 @@ def _draw_piece_labels(c, x_mm, y_mm, shape_label, cut_label):
     if rotate_cw:
         c.rotate(-90)
     c.setFillColorRGB(0, 0, 0)
-    if cut_label and shape_label:
-        c.setFont("Helvetica", SHAPE_LABEL_FONT_SIZE)
-        c.drawCentredString(0, CUT_LABEL_FONT_SIZE * 0.55, shape_label)
-        c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
-        c.drawCentredString(0, -CUT_LABEL_FONT_SIZE * 0.35, cut_label)
-    elif cut_label:
-        c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
-        c.drawCentredString(0, -CUT_LABEL_FONT_SIZE * 0.35, cut_label)
-    elif shape_label:
-        c.setFont("Helvetica-Bold", SHAPE_LABEL_ALONE_FONT_SIZE)
-        c.drawCentredString(0, -SHAPE_LABEL_ALONE_FONT_SIZE * 0.35, shape_label)
+    c.setFont("Helvetica-Bold", PIECE_LABEL_FONT_SIZE)
+    c.drawCentredString(0, -PIECE_LABEL_FONT_SIZE * 0.35, text)
     c.restoreState()
 
 

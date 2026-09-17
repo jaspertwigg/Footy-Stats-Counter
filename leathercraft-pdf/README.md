@@ -76,6 +76,7 @@ python make_pdf.py examples/duplicate_straps.dxf --label 2="Shoulder Strap" --la
 | `--units-per-mm` | *(auto)* | Override unit detection (see below) |
 | `--dpi` | `96` | Assumed pixel density for SVGs with no physical width/height |
 | `--label N=TEXT` | *(none)* | Name piece number `N`, e.g. `--label 1="Outer Shell"`. Repeatable. |
+| `--flip N` | *(none)* | Mirror piece number `N` top-to-bottom in place, e.g. `--flip 5`. Repeatable. |
 
 ## Preserving exact dimensions
 
@@ -173,17 +174,23 @@ python make_pdf.py wallet.lcc \
   --label 3="Extra Pocket" --label 4="Front Pocket"
 ```
 
-The name is printed on that shape, but deliberately smaller and lighter
-than its "Cut N" — cutting the right number of copies is the instruction
-that matters most when you're actually at the workbench, so it stays the
-visually dominant text; the name is secondary context. A piece with no
-duplicates just shows its name at a normal size, since there's no "Cut N"
-for it to defer to.
+The name is printed on that shape in one large, bold, consistent size.
+If the piece has duplicates, its "Cut N" is appended in parentheses on the
+same line, e.g. `Hidden Pocket (Cut 2)`, so it still reads as separate,
+supplementary information without needing a different size or weight to
+set it apart. A piece with no name just shows `(Cut N)` on its own.
 
 Any name containing the word "horizontal" (case-insensitive) gets its
-label(s) rotated 90 degrees clockwise, for a piece narrow enough that
+label rotated 90 degrees clockwise, for a piece narrow enough that
 sideways text reads more naturally along its length — e.g.
 `--label 7="Horizontal Front Pocket"`.
+
+If a piece's geometry came out of the CAD file upside-down relative to how
+it should read once cut and assembled, pass `--flip N` (repeatable) to
+mirror it top-to-bottom in place — e.g. `--flip 5`. This changes the
+piece's actual cut lines, not just its label; the bounding box (and so
+page layout) is unaffected, since a flip about a shape's own center keeps
+the same rectangle.
 
 ## How pages are laid out
 
