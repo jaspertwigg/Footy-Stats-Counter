@@ -186,3 +186,27 @@ def dedupe_identical_pieces(pieces: List[Piece], length_tol_mm: float = 0.1) -> 
         rep = members[0]
         result.append(Piece(polylines=rep.polylines, bbox=rep.bbox, cut_count=len(members)))
     return result
+
+
+def is_irregular_shape(piece: Piece, length_tol_mm: float = 0.5) -> bool:
+    """True if the piece has at least one substantial edge that's neither
+    its bounding-box width nor height -- i.e. it's not a plain rectangle
+    (a trapezoid, a notched/angled corner, ...).
+
+    Short edges (under 20% of the piece's smaller bbox dimension) are
+    ignored so a fold-mark tick doesn't get mistaken for an irregular main
+    edge. Useful when two pieces share a bounding box but aren't the same
+    shape -- e.g. picking which of two same-size pieces to `--label` as
+    "the funny shaped one" without having to open the PDF first.
+    """
+    w = piece.bbox[2] - piece.bbox[0]
+    h = piece.bbox[3] - piece.bbox[1]
+    min_dim = min(w, h)
+    for poly in piece.polylines:
+        for (x1, y1), (x2, y2) in zip(poly, poly[1:]):
+            length = math.hypot(x2 - x1, y2 - y1)
+            if length < min_dim * 0.2:
+                continue
+            if abs(length - w) > length_tol_mm and abs(length - h) > length_tol_mm:
+                return True
+    return False

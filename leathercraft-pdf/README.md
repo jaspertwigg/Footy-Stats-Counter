@@ -59,7 +59,8 @@ Try it on the bundled examples:
 ```bash
 python make_pdf.py examples/simple_panel.dxf        # one piece, fits on one page, centered
 python make_pdf.py examples/large_bag_panel.dxf     # one 500x350mm piece -> tiled across 4 A4 pages (landscape)
-python make_pdf.py examples/duplicate_straps.dxf    # 3 identical straps -> drawn once, labeled "Cut 3"
+# 3 identical straps -> drawn once, labeled "Shoulder Strap" + "Cut 3"
+python make_pdf.py examples/duplicate_straps.dxf --label 2="Shoulder Strap" --label 1="Buckle Loop"
 ```
 
 ### Options
@@ -74,6 +75,7 @@ python make_pdf.py examples/duplicate_straps.dxf    # 3 identical straps -> draw
 | `--tolerance-mm` | `0.1` | How finely curves/arcs are flattened to line segments |
 | `--units-per-mm` | *(auto)* | Override unit detection (see below) |
 | `--dpi` | `96` | Assumed pixel density for SVGs with no physical width/height |
+| `--label N=TEXT` | *(none)* | Name piece number `N`, e.g. `--label 1="Outer Shell"`. Repeatable. |
 
 ## Preserving exact dimensions
 
@@ -143,6 +145,40 @@ merged. The terminal output says what happened:
 ```
 Found 8 piece(s), 5 distinct shape(s) after merging identical/mirrored duplicates (2 copies, 2 copies, 2 copies) -- each is drawn once with a 'Cut N' label.
 ```
+
+## Naming pieces
+
+Every run prints a numbered list of the distinct shapes it found, so you can
+identify which piece is which before naming any of them:
+
+```
+Pieces found (use --label N=text to name one, e.g. --label 1='Outer Shell'):
+  piece 1/5: 235x86mm (single)
+  piece 2/5: 222x86mm (single)
+  piece 3/5: 102x55mm (Cut 2, irregular/notched shape)
+  piece 4/5: 102x55mm (Cut 2)
+  piece 5/5: 102x86mm (Cut 2)
+```
+
+The `irregular/notched shape` note flags a piece with at least one edge
+that's neither its bounding-box width nor height (a trapezoid, an angled
+corner) — handy for telling apart two pieces that share a bounding box but
+aren't actually the same shape, like `piece 3` and `piece 4` above.
+
+Pass `--label N=TEXT` (repeatable) to name pieces by their number:
+
+```bash
+python make_pdf.py wallet.lcc \
+  --label 1="Outer Shell" --label 2="Inner Shell" --label 5="Hidden Pocket" \
+  --label 3="Extra Pocket" --label 4="Front Pocket"
+```
+
+The name is printed on that shape, but deliberately smaller and lighter
+than its "Cut N" — cutting the right number of copies is the instruction
+that matters most when you're actually at the workbench, so it stays the
+visually dominant text; the name is secondary context. A piece with no
+duplicates just shows its name at a normal size, since there's no "Cut N"
+for it to defer to.
 
 ## How pages are laid out
 

@@ -33,7 +33,9 @@ MM_TO_PT = 72.0 / 25.4
 REG_GRID_SPACING_MM = 50.0
 REG_MARK_SIZE_MM = 3.0
 LINE_WIDTH_MM = 0.15
-CUT_LABEL_FONT_SIZE = 12
+CUT_LABEL_FONT_SIZE = 14
+SHAPE_LABEL_FONT_SIZE = 8  # when shown alongside a cut label -- deliberately smaller
+SHAPE_LABEL_ALONE_FONT_SIZE = 11  # when it's the only text on the piece
 SCALE_BAR_WIDTH_CM = 5.0
 SCALE_BAR_HEIGHT_CM = 3.0
 
@@ -46,8 +48,12 @@ class PiecePlacement:
     footer_label: str
     # Set only for a deduped piece with more than one copy, e.g. "Cut 2".
     cut_label: Optional[str] = None
+    # A user-supplied name for this piece (--label), e.g. "Outer Shell".
+    # Drawn smaller than cut_label so the cut count stays the more
+    # prominent, actionable text.
+    shape_label: Optional[str] = None
     # Pattern-space (px, py), before offset_x/offset_y -- where to center
-    # cut_label, if set.
+    # cut_label/shape_label, if either is set.
     centroid: Optional[Tuple[float, float]] = None
 
 
@@ -62,8 +68,9 @@ class TilePageJob:
     tile: Tile
     piece_label: str
     # Only set on the one tile page that "owns" showing this piece's cut
-    # label (its centroid falls within that tile's rect).
+    # and/or shape label (its centroid falls within that tile's rect).
     cut_label: Optional[str] = None
+    shape_label: Optional[str] = None
     cut_centroid: Optional[Tuple[float, float]] = None
 
 
@@ -130,9 +137,9 @@ def _draw_tile_page(c, job: TilePageJob, page_num, total_pages, page_size_mm, ma
     visible = [poly for poly in job.polylines if _overlaps(poly, x0, y0, x1, y1)]
     _stroke_polylines(c, to_page, visible, (margin_mm, margin_mm, margin_mm + tile_w, margin_mm + tile_h))
     _draw_registration_grid(c, to_page, x0, y0, x1, y1)
-    if job.cut_label and job.cut_centroid:
+    if job.cut_centroid and (job.cut_label or job.shape_label):
         cx, cy = to_page(*job.cut_centroid)
-        _draw_cut_label(c, cx, cy, job.cut_label)
+        _draw_piece_labels(c, cx, cy, job.shape_label, job.cut_label)
     c.restoreState()
 
     # --- Page furniture: crop marks, scale bar, footer, overview (unclipped) ---
@@ -170,9 +177,9 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
         )
         if placement.footer_label:
             piece_labels.append(placement.footer_label)
-        if placement.cut_label and placement.centroid:
+        if placement.centroid and (placement.cut_label or placement.shape_label):
             cx, cy = to_page(*placement.centroid)
-            _draw_cut_label(c, cx, cy, placement.cut_label)
+            _draw_piece_labels(c, cx, cy, placement.shape_label, placement.cut_label)
     c.restoreState()
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)
@@ -232,15 +239,28 @@ def _draw_registration_grid(c, to_page, x0, y0, x1, y1):
     c.setStrokeColorRGB(0, 0, 0)
 
 
-def _draw_cut_label(c, x_mm, y_mm, text):
-    """Bold text centered on a point, e.g. "Cut 2" in the middle of a shape
-    that's only drawn once but needs to be cut multiple times.
+def _draw_piece_labels(c, x_mm, y_mm, shape_label, cut_label):
+    """Draw a piece's name and/or its "Cut N" count, centered on a point.
+
+    "Cut N" is the actionable instruction (how many times to trace this
+    shape), so it's always the visually dominant one -- bigger and bold.
+    A shape name (from --label) is secondary: smaller, regular weight, and
+    placed just above the cut count when both are present. With no cut
+    count, the shape name is drawn a bit larger since it's then the only
+    text on the piece.
     """
-    c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
     c.setFillColorRGB(0, 0, 0)
-    # drawCentredString positions the baseline at y; nudge down about half
-    # the cap-height so the text is vertically centered on the point too.
-    c.drawCentredString(_mm(x_mm), _mm(y_mm) - CUT_LABEL_FONT_SIZE * 0.35, text)
+    if cut_label and shape_label:
+        c.setFont("Helvetica", SHAPE_LABEL_FONT_SIZE)
+        c.drawCentredString(_mm(x_mm), _mm(y_mm) + CUT_LABEL_FONT_SIZE * 0.55, shape_label)
+        c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
+        c.drawCentredString(_mm(x_mm), _mm(y_mm) - CUT_LABEL_FONT_SIZE * 0.35, cut_label)
+    elif cut_label:
+        c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
+        c.drawCentredString(_mm(x_mm), _mm(y_mm) - CUT_LABEL_FONT_SIZE * 0.35, cut_label)
+    elif shape_label:
+        c.setFont("Helvetica-Bold", SHAPE_LABEL_ALONE_FONT_SIZE)
+        c.drawCentredString(_mm(x_mm), _mm(y_mm) - SHAPE_LABEL_ALONE_FONT_SIZE * 0.35, shape_label)
 
 
 def _draw_cross(c, px_mm, py_mm, size_mm):

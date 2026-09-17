@@ -6,7 +6,7 @@ import sys
 from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox, polylines_centroid
 from .layout import PAGE_SIZES_MM, compute_tiles
 from .packing import pack_pieces
-from .pieces import dedupe_identical_pieces, group_into_pieces
+from .pieces import dedupe_identical_pieces, group_into_pieces, is_irregular_shape
 from .render import PackedPageJob, PiecePlacement, TilePageJob, draw_pdf
 
 
@@ -55,7 +55,38 @@ def build_parser() -> argparse.ArgumentParser:
         "--dpi", type=float, default=96.0,
         help="Assumed pixels-per-inch for SVGs with no physical width/height (default: 96)",
     )
+    p.add_argument(
+        "--label", action="append", default=[], metavar="N=TEXT",
+        help=(
+            "Name a piece by its number, e.g. --label 1='Outer Shell' -- the "
+            "name is printed on that shape (smaller than its 'Cut N', if any). "
+            "Piece numbers are shown in the summary this tool prints on every "
+            "run. Repeatable."
+        ),
+    )
     return p
+
+
+def _parse_labels(label_args, total_pieces):
+    labels = {}
+    for item in label_args:
+        if "=" not in item:
+            print(f"Invalid --label {item!r}: expected NUM=TEXT", file=sys.stderr)
+            return None
+        num_str, text = item.split("=", 1)
+        try:
+            num = int(num_str)
+        except ValueError:
+            print(f"Invalid --label {item!r}: {num_str!r} is not a piece number", file=sys.stderr)
+            return None
+        if not (1 <= num <= total_pieces):
+            print(
+                f"WARNING: --label {item!r} doesn't match any piece (there are {total_pieces})",
+                file=sys.stderr,
+            )
+            continue
+        labels[num] = text
+    return labels
 
 
 def _plan(pieces, page_size_mm, margin_mm, overlap_mm):
@@ -189,6 +220,19 @@ def main(argv=None) -> int:
     piece_number = {id(p): i + 1 for i, p in enumerate(ordered)}
     total_pieces = len(pieces)
 
+    labels = _parse_labels(args.label, total_pieces)
+    if labels is None:
+        return 2
+
+    print("Pieces found (use --label N=text to name one, e.g. --label 1='Outer Shell'):", file=sys.stderr)
+    for p in ordered:
+        num = piece_number[id(p)]
+        pw, ph = p.bbox[2] - p.bbox[0], p.bbox[3] - p.bbox[1]
+        tag = f"Cut {p.cut_count}" if p.cut_count > 1 else "single"
+        shape_note = ", irregular/notched shape" if is_irregular_shape(p) else ""
+        named = f" -> {labels[num]!r}" if num in labels else ""
+        print(f"  piece {num}/{total_pieces}: {pw:.0f}x{ph:.0f}mm ({tag}{shape_note}){named}", file=sys.stderr)
+
     def cut_label_for(piece):
         return f"Cut {piece.cut_count}" if piece.cut_count > 1 else None
 
@@ -196,12 +240,16 @@ def main(argv=None) -> int:
     for packed_page in packed_pages:
         placements = []
         for piece, ox, oy in packed_page.placements:
-            footer_label = f"piece {piece_number[id(piece)]}/{total_pieces}"
-            centroid = polylines_centroid(piece.polylines) if piece.cut_count > 1 else None
+            num = piece_number[id(piece)]
+            footer_label = f"piece {num}/{total_pieces}"
+            shape_label = labels.get(num)
+            cut_label = cut_label_for(piece)
+            centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
             placements.append(
                 PiecePlacement(
                     polylines=piece.polylines, offset_x=ox, offset_y=oy,
-                    footer_label=footer_label, cut_label=cut_label_for(piece), centroid=centroid,
+                    footer_label=footer_label, cut_label=cut_label, shape_label=shape_label,
+                    centroid=centroid,
                 )
             )
         pages.append(PackedPageJob(placements=placements))
@@ -212,11 +260,12 @@ def main(argv=None) -> int:
         pw, ph = piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1]
         label = f"piece {num}/{total_pieces} ({pw:.0f}x{ph:.0f}mm)"
         cut_label = cut_label_for(piece)
-        centroid = polylines_centroid(piece.polylines) if cut_label else None
+        shape_label = labels.get(num)
+        centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
         label_placed = False
         for tile in tiles:
             owns_label = False
-            if cut_label and not label_placed:
+            if centroid and not label_placed:
                 cx, cy = centroid
                 x0, y0, x1, y1 = tile.rect
                 if x0 <= cx <= x1 and y0 <= cy <= y1:
@@ -226,6 +275,7 @@ def main(argv=None) -> int:
                 TilePageJob(
                     polylines=piece.polylines, tile=tile, piece_label=label,
                     cut_label=cut_label if owns_label else None,
+                    shape_label=shape_label if owns_label else None,
                     cut_centroid=centroid if owns_label else None,
                 )
             )
