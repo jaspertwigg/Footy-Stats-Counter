@@ -12,13 +12,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="leathercraft-pdf",
         description=(
-            "Convert a leathercraft CAD pattern (DXF or SVG) into a print-ready, "
-            "true-scale PDF. Large patterns are automatically tiled across "
-            "multiple pages with registration marks so they can be taped "
-            "back together at exact size."
+            "Convert a leathercraft CAD pattern (DXF, SVG, or LeathercraftCAD .lcc) "
+            "into a print-ready, true-scale PDF. Large patterns are automatically "
+            "tiled across multiple pages with registration marks so they can be "
+            "taped back together at exact size."
         ),
     )
-    p.add_argument("input", help="Path to the .dxf or .svg pattern file")
+    p.add_argument("input", help="Path to the .dxf, .svg, or .lcc pattern file")
     p.add_argument("-o", "--output", help="Output PDF path (default: input name with .pdf extension)")
     p.add_argument(
         "--page-size", default="A4", choices=sorted(PAGE_SIZES_MM.keys()),
@@ -80,8 +80,36 @@ def main(argv=None) -> int:
                 file=sys.stderr,
             )
         unit_note = f"Scale: {info['detection_method']}"
+    elif lower.endswith(".lcc"):
+        from .lcc_reader import read_lcc
+
+        polylines, info = read_lcc(args.input, tolerance=args.tolerance_mm, unit_override=args.units_per_mm)
+        if info["assumed_mm_no_units_declared"]:
+            print(
+                "WARNING: .lcc files don't declare units -- assuming coordinates are "
+                "already millimetres (LeathercraftCAD's usual convention). "
+                "Check the printed ruler on page 1 and pass --units-per-mm to correct if needed.",
+                file=sys.stderr,
+            )
+            unit_note = "Units: assumed 1 file unit = 1mm (LeathercraftCAD default)"
+        else:
+            unit_note = f"Units: 1 file unit = {info['mm_per_unit']:.4g}mm"
+        if info["skipped_shape_types"]:
+            print(
+                f"WARNING: skipped unsupported .lcc shape type(s): {info['skipped_shape_types']} "
+                "-- only LINE shapes are currently understood, so parts of the pattern may be missing. "
+                "Please share a sample file so support can be added.",
+                file=sys.stderr,
+            )
+        if info["guessed_curve_count"]:
+            print(
+                f"WARNING: {info['guessed_curve_count']} curved LINE shape(s) used an unverified "
+                "guess at how .lcc encodes bezier control points -- double-check curved edges "
+                "against the original pattern.",
+                file=sys.stderr,
+            )
     else:
-        print(f"Unsupported input file type: {args.input} (expected .dxf or .svg)", file=sys.stderr)
+        print(f"Unsupported input file type: {args.input} (expected .dxf, .svg, or .lcc)", file=sys.stderr)
         return 2
 
     if not polylines:

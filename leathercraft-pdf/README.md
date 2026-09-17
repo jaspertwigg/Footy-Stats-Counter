@@ -1,10 +1,10 @@
 # leathercraft-pdf
 
-Turn a pattern exported from a leathercraft CAD program (DXF or SVG) into a
-print-ready PDF at **exact, true-to-life scale**. If the pattern is bigger
-than a sheet of paper, it's automatically split across multiple pages with
-overlapping registration marks so you can trim and tape them back together
-at the right size.
+Turn a pattern exported from a leathercraft CAD program (DXF, SVG, or
+LeathercraftCAD's native `.lcc`) into a print-ready PDF at **exact,
+true-to-life scale**. If the pattern is bigger than a sheet of paper, it's
+automatically split across multiple pages with overlapping registration
+marks so you can trim and tape them back together at the right size.
 
 ## Why not just "print to PDF" from the CAD program?
 
@@ -29,6 +29,7 @@ Needs Python 3.9+. Only two dependencies: `ezdxf` (DXF parsing) and
 ```bash
 python make_pdf.py path/to/pattern.dxf
 python make_pdf.py path/to/pattern.svg -o wallet.pdf
+python make_pdf.py path/to/project.lcc
 ```
 
 By default it writes next to the input file with a `.pdf` extension, tiles
@@ -105,6 +106,20 @@ exactly, then tape.
 `ARC`, `ELLIPSE`, `SPLINE`, `HATCH` boundaries, and `INSERT` block
 references (exploded automatically). Units are read from the file's
 `$INSUNITS` header.
+
+**LeathercraftCAD (`.lcc`):** straight-line shapes (the vast majority of
+real patterns). There's no public spec for this format, so support is
+based on files actually seen rather than documentation: coordinates are
+assumed to already be millimetres (no unit field exists in the format, but
+line-thickness values consistently match millimetre conventions like
+1.8mm), and any shape type other than a straight `LINE` is skipped with a
+warning naming the type and count rather than silently guessed at or
+dropped without notice. If your `.lcc` file uses curved shapes and the
+warning about a "guessed curve" interpretation shows up, double-check
+those edges against the original before cutting — that interpretation is
+unverified against a real curved example. If a file produces warnings,
+consider exporting to DXF or SVG from LeathercraftCAD instead, or share the
+file so support can be extended.
 
 **SVG:** `path` (all commands, including arcs and smooth curves), `line`,
 `polyline`, `polygon`, `rect`, `circle`, `ellipse`, and `g` groups with
