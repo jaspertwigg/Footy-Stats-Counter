@@ -93,12 +93,15 @@ control, so it defends against both:
    happens. If it's wrong, re-run with `--units-per-mm` set to the correct
    conversion factor (e.g. an SVG actually in 72 DPI Illustrator points
    would need `--units-per-mm 0.352778`).
-2. **Printer/PDF-viewer scaling.** Every single page — tiled or not — has a
-   50mm ruler with tick marks printed in the margin, labelled "measure with
-   a ruler before cutting." When you print, **turn off any "fit to page" /
-   "scale to fit" option and print at 100%**, then check that ruler with an
-   actual ruler before cutting any leather. If it doesn't measure 50mm, redo
-   the print with scaling disabled.
+2. **Printer/PDF-viewer scaling.** Every single page — tiled or not — has an
+   L-shaped scale bar printed in the bottom-left margin: a 5cm horizontal
+   arm and a 3cm vertical arm, each labeled with its own length in cm.
+   Checking both axes separately (not just one ruler) catches a printer or
+   viewer that scales width and height by different amounts, not just
+   uniform "fit to page" shrinking. When you print, **turn off any "fit to
+   page" / "scale to fit" option and print at 100%**, then measure both
+   arms with an actual ruler before cutting any leather — if either doesn't
+   match its label, redo the print with scaling disabled.
 
 ## How piece detection works
 
@@ -231,7 +234,7 @@ from your CAD program if you need it preserved.
 - If exporting SVG, use a version of your program's export dialog that sets
   a real physical `width`/`height` (e.g. `200mm`) rather than only a pixel
   size — that avoids the DPI-guessing fallback entirely.
-- Whatever you export, treat the printed ruler as the actual proof of
+- Whatever you export, treat the printed scale bar as the actual proof of
   correctness for a given project, not this README.
 
 ## Running the tests

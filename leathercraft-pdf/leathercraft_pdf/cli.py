@@ -48,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Override unit detection: how many mm one file-unit equals "
             "(e.g. for a DXF with no declared units, or an SVG whose scale "
-            "was guessed wrong -- check the printed ruler and adjust this)."
+            "was guessed wrong -- check the printed scale bar and adjust this)."
         ),
     )
     p.add_argument(
@@ -89,7 +89,7 @@ def main(argv=None) -> int:
         if info["assumed_mm_no_units_declared"]:
             print(
                 "WARNING: DXF has no $INSUNITS declared -- assuming 1 unit = 1mm. "
-                "Check the printed ruler on page 1 and pass --units-per-mm to correct if needed.",
+                "Check the printed scale bar on page 1 and pass --units-per-mm to correct if needed.",
                 file=sys.stderr,
             )
             unit_note = "Units: assumed 1 drawing unit = 1mm (not declared in file)"
@@ -102,7 +102,7 @@ def main(argv=None) -> int:
         if info["is_guess"]:
             print(
                 f"WARNING: SVG has no explicit physical size -- {info['detection_method']}. "
-                "Check the printed ruler on page 1 and pass --units-per-mm or --dpi to correct if needed.",
+                "Check the printed scale bar on page 1 and pass --units-per-mm or --dpi to correct if needed.",
                 file=sys.stderr,
             )
         unit_note = f"Scale: {info['detection_method']}"
@@ -114,7 +114,7 @@ def main(argv=None) -> int:
             print(
                 "WARNING: .lcc files don't declare units -- assuming coordinates are "
                 "already millimetres (LeathercraftCAD's usual convention). "
-                "Check the printed ruler on page 1 and pass --units-per-mm to correct if needed.",
+                "Check the printed scale bar on page 1 and pass --units-per-mm to correct if needed.",
                 file=sys.stderr,
             )
             unit_note = "Units: assumed 1 file unit = 1mm (LeathercraftCAD default)"

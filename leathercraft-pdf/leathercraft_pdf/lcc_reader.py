@@ -13,7 +13,7 @@ handle what's been observed in real files:
   edge/groove thickness values match common millimetre conventions (e.g.
   1.8mm), so coordinates are assumed to already be millimetres. Use
   --units-per-mm to override if a file turns out to be in a different unit
-  -- the printed ruler on the output PDF is the way to confirm either way.
+  -- the printed scale bar on the output PDF is the way to confirm either way.
 
 Any shape "type" other than "LINE" is skipped and reported back in `info`
 rather than silently dropped or guessed at.

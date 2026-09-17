@@ -32,9 +32,10 @@ MM_TO_PT = 72.0 / 25.4
 
 REG_GRID_SPACING_MM = 50.0
 REG_MARK_SIZE_MM = 3.0
-RULER_LENGTH_MM = 50.0
 LINE_WIDTH_MM = 0.15
 CUT_LABEL_FONT_SIZE = 12
+SCALE_BAR_WIDTH_CM = 5.0
+SCALE_BAR_HEIGHT_CM = 3.0
 
 
 @dataclass
@@ -134,13 +135,13 @@ def _draw_tile_page(c, job: TilePageJob, page_num, total_pages, page_size_mm, ma
         _draw_cut_label(c, cx, cy, job.cut_label)
     c.restoreState()
 
-    # --- Page furniture: crop marks, ruler, footer, overview (unclipped) ---
+    # --- Page furniture: crop marks, scale bar, footer, overview (unclipped) ---
     _draw_crop_marks(c, page_w, page_h, margin_mm)
-    _draw_ruler(c, margin_mm, page_h)
+    _draw_scale_bar(c, margin_mm)
     label = (
         f"{job.piece_label}  |  page {page_num}/{total_pages}  "
         f"(tile row {tile.row + 1}/{tile.rows}, col {tile.col + 1}/{tile.cols})  "
-        f"-- TILED: tape to its sibling pages using the crosshairs"
+        f"-- TILED: tape to its sibling pages using the crosshairs, verify the scale bar first"
     )
     _draw_footer(c, label, page_w, margin_mm, source_name, unit_note)
     _draw_overview(c, tile, page_w, page_h, margin_mm)
@@ -175,11 +176,12 @@ def _draw_packed_page(c, job: PackedPageJob, page_num, total_pages, page_size_mm
     c.restoreState()
 
     _draw_crop_marks(c, page_w, page_h, margin_mm)
-    _draw_ruler(c, margin_mm, page_h)
+    _draw_scale_bar(c, margin_mm)
     summary = ", ".join(piece_labels) if piece_labels else "(empty page)"
     label = (
         f"{summary}  |  page {page_num}/{total_pages}  "
-        f"-- fits whole, not split  |  Print at 100% / Actual Size -- do NOT 'fit to page'"
+        f"-- fits whole, not split  |  Print at 100% / Actual Size -- do NOT 'fit to page', "
+        f"verify the scale bar first"
     )
     _draw_footer(c, label, page_w, margin_mm, source_name, unit_note)
 
@@ -263,25 +265,46 @@ def _draw_crop_marks(c, page_w, page_h, margin_mm):
         c.line(_mm(x), _mm(y), _mm(x), _mm(y + dy * L))
 
 
-def _draw_ruler(c, margin_mm, page_h):
-    """A true-scale ruler in the bottom margin, to sanity-check printer scaling."""
-    x_start = margin_mm
-    y = margin_mm * 0.35
-    length = RULER_LENGTH_MM
+def _fmt_cm(cm: float) -> str:
+    return f"{cm:g}cm"
+
+
+def _draw_scale_bar(c, margin_mm):
+    """An L-shaped, two-axis scale bar in the bottom-left margin, labeled in
+    cm on both arms, to sanity-check printer scaling on width AND height
+    independently -- a single 1-D ruler can't catch a printer or PDF viewer
+    that scales the two axes by different amounts.
+
+    Both arms live entirely within the margin band (the horizontal arm at
+    y < margin_mm, the vertical arm at x < margin_mm), the same unclipped
+    region crop marks and the footer use, so it's never drawn over the
+    actual pattern regardless of piece size or position.
+    """
+    x0 = min(3.0, margin_mm * 0.3)
+    y0 = min(3.0, margin_mm * 0.3)
+    width_mm = SCALE_BAR_WIDTH_CM * 10.0
+    height_mm = SCALE_BAR_HEIGHT_CM * 10.0
 
     c.setLineWidth(_mm(0.25))
     c.setStrokeColorRGB(0, 0, 0)
-    c.line(_mm(x_start), _mm(y), _mm(x_start + length), _mm(y))
-    for i in range(0, int(length) + 1, 10):
-        tick_h = 1.5 if i % 50 == 0 else 0.8
-        c.line(_mm(x_start + i), _mm(y - tick_h), _mm(x_start + i), _mm(y + tick_h))
+    c.line(_mm(x0), _mm(y0), _mm(x0 + width_mm), _mm(y0))
+    c.line(_mm(x0), _mm(y0), _mm(x0), _mm(y0 + height_mm))
 
-    c.setFont("Helvetica", 6)
-    c.drawString(
-        _mm(x_start),
-        _mm(y + 1.8),
-        f"{int(length)}mm -- measure with a ruler before cutting. If wrong, your printer is scaling the page.",
-    )
+    for i in range(0, int(width_mm) + 1, 10):
+        tick = 1.5 if i in (0, int(width_mm)) else 0.8
+        c.line(_mm(x0 + i), _mm(y0 - tick), _mm(x0 + i), _mm(y0 + tick))
+    for i in range(0, int(height_mm) + 1, 10):
+        tick = 1.5 if i in (0, int(height_mm)) else 0.8
+        c.line(_mm(x0 - tick), _mm(y0 + i), _mm(x0 + tick), _mm(y0 + i))
+
+    c.setFont("Helvetica-Bold", 6)
+    c.drawString(_mm(x0 + 2), _mm(y0 + 1.6), _fmt_cm(SCALE_BAR_WIDTH_CM))
+
+    c.saveState()
+    c.translate(_mm(x0 + 1.6), _mm(y0 + 2))
+    c.rotate(90)
+    c.drawString(0, 0, _fmt_cm(SCALE_BAR_HEIGHT_CM))
+    c.restoreState()
 
 
 def _draw_footer(c, label, page_w, margin_mm, source_name, unit_note):
