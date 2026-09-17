@@ -248,19 +248,30 @@ def _draw_piece_labels(c, x_mm, y_mm, shape_label, cut_label):
     placed just above the cut count when both are present. With no cut
     count, the shape name is drawn a bit larger since it's then the only
     text on the piece.
+
+    A shape whose name contains "horizontal" gets its label(s) rotated 90
+    degrees clockwise -- e.g. a narrow "Horizontal Pocket Divider" piece
+    where sideways text reads more naturally along its length.
     """
+    rotate_cw = bool(shape_label) and "horizontal" in shape_label.lower()
+
+    c.saveState()
+    c.translate(_mm(x_mm), _mm(y_mm))
+    if rotate_cw:
+        c.rotate(-90)
     c.setFillColorRGB(0, 0, 0)
     if cut_label and shape_label:
         c.setFont("Helvetica", SHAPE_LABEL_FONT_SIZE)
-        c.drawCentredString(_mm(x_mm), _mm(y_mm) + CUT_LABEL_FONT_SIZE * 0.55, shape_label)
+        c.drawCentredString(0, CUT_LABEL_FONT_SIZE * 0.55, shape_label)
         c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
-        c.drawCentredString(_mm(x_mm), _mm(y_mm) - CUT_LABEL_FONT_SIZE * 0.35, cut_label)
+        c.drawCentredString(0, -CUT_LABEL_FONT_SIZE * 0.35, cut_label)
     elif cut_label:
         c.setFont("Helvetica-Bold", CUT_LABEL_FONT_SIZE)
-        c.drawCentredString(_mm(x_mm), _mm(y_mm) - CUT_LABEL_FONT_SIZE * 0.35, cut_label)
+        c.drawCentredString(0, -CUT_LABEL_FONT_SIZE * 0.35, cut_label)
     elif shape_label:
         c.setFont("Helvetica-Bold", SHAPE_LABEL_ALONE_FONT_SIZE)
-        c.drawCentredString(_mm(x_mm), _mm(y_mm) - SHAPE_LABEL_ALONE_FONT_SIZE * 0.35, shape_label)
+        c.drawCentredString(0, -SHAPE_LABEL_ALONE_FONT_SIZE * 0.35, shape_label)
+    c.restoreState()
 
 
 def _draw_cross(c, px_mm, py_mm, size_mm):

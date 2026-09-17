@@ -180,6 +180,11 @@ visually dominant text; the name is secondary context. A piece with no
 duplicates just shows its name at a normal size, since there's no "Cut N"
 for it to defer to.
 
+Any name containing the word "horizontal" (case-insensitive) gets its
+label(s) rotated 90 degrees clockwise, for a piece narrow enough that
+sideways text reads more naturally along its length — e.g.
+`--label 7="Horizontal Front Pocket"`.
+
 ## How pages are laid out
 
 Once pieces are known (after deduplication), each one is either **packed**

@@ -114,7 +114,21 @@ def test_shape_label_alone_uses_the_larger_solo_size(tmp_path):
 def test_shape_label_is_positioned_above_cut_label(tmp_path):
     content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label="Cut 2")
     positions = {}
-    for m in re.finditer(r"1 0 0 1 ([\d.]+) ([\d.]+) Tm \((.*?)\) Tj", content):
+    # Text is drawn relative to a translated (and possibly rotated) local
+    # origin, so its Tm offset can be negative -- allow a leading '-'.
+    for m in re.finditer(r"1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm \((.*?)\) Tj", content):
         x, y, text = m.groups()
         positions[text] = float(y)
     assert positions["Outer Shell"] > positions["Cut 2"]
+
+
+def test_horizontal_named_piece_gets_rotated_text(tmp_path):
+    content = _render_one_piece(tmp_path, shape_label="Horizontal Pocket Divider", cut_label=None)
+    # A -90 degree (clockwise) rotation emits a "0 -1 1 0" concat matrix
+    # (cos, sin, -sin, cos for theta=-90 -> 0, -1, 1, 0) before the text.
+    assert re.search(r"0 -1 1 0 [\d.]+ [\d.]+ cm", content)
+
+
+def test_non_horizontal_named_piece_is_not_rotated(tmp_path):
+    content = _render_one_piece(tmp_path, shape_label="Outer Shell", cut_label=None)
+    assert re.search(r"0 -1 1 0 [\d.]+ [\d.]+ cm", content) is None
