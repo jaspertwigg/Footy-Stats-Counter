@@ -61,3 +61,13 @@ def test_single_pieces_keep_cut_count_one():
     result = dedupe_identical_pieces([a, b])
     assert len(result) == 2
     assert all(p.cut_count == 1 for p in result)
+
+
+def test_layer_name_survives_dedupe():
+    a = _rect(0, 0, 100, 50)
+    a.layer_name = "Hidden Pockets"
+    b = _rect(500, 500, 100, 50)
+    b.layer_name = "Hidden Pockets"
+    result = dedupe_identical_pieces([a, b])
+    assert len(result) == 1
+    assert result[0].layer_name == "Hidden Pockets"

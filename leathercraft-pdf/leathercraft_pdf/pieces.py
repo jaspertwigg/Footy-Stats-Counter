@@ -17,8 +17,9 @@ to that outline even though it doesn't touch it.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .geometry import Polyline, polyline_bbox
 
@@ -30,6 +31,10 @@ class Piece:
     polylines: List[Polyline]
     bbox: BBox
     cut_count: int = 1
+    # The source file's own name for this piece, e.g. a LeathercraftCAD
+    # layer name -- None if the format has no such concept, or the user
+    # never renamed it away from a meaningless default like "Layer 6".
+    layer_name: Optional[str] = None
 
 
 class _UnionFind:
@@ -68,6 +73,7 @@ def group_into_pieces(
     polylines: List[Polyline],
     endpoint_epsilon_mm: float = 0.05,
     containment_tolerance_mm: float = 0.5,
+    layer_names: Optional[List[Optional[str]]] = None,
 ) -> List[Piece]:
     """Reconstruct pattern pieces from a flat list of polylines.
 
@@ -83,6 +89,11 @@ def group_into_pieces(
     Two lines that are merely close together but don't satisfy either of
     those (e.g. two separate pieces nested for efficient cutting, sitting
     edge-to-edge) are correctly kept as separate pieces.
+
+    `layer_names`, if given, must be parallel to `polylines`. Each piece's
+    `layer_name` is whichever name is most common among its member lines --
+    in practice a whole piece sits on one layer, so this is exact, not just
+    a good guess.
     """
     n = len(polylines)
     uf = _UnionFind()
@@ -141,7 +152,12 @@ def group_into_pieces(
         bbox = polyline_bbox(member_polylines)
         if bbox is None:
             continue
-        pieces.append(Piece(polylines=member_polylines, bbox=bbox))
+        layer_name = None
+        if layer_names is not None:
+            names = [layer_names[i] for i in indices if layer_names[i]]
+            if names:
+                layer_name = Counter(names).most_common(1)[0][0]
+        pieces.append(Piece(polylines=member_polylines, bbox=bbox, layer_name=layer_name))
     return pieces
 
 
@@ -184,7 +200,9 @@ def dedupe_identical_pieces(pieces: List[Piece], length_tol_mm: float = 0.1) -> 
     for sig in order:
         members = groups[sig]
         rep = members[0]
-        result.append(Piece(polylines=rep.polylines, bbox=rep.bbox, cut_count=len(members)))
+        result.append(
+            Piece(polylines=rep.polylines, bbox=rep.bbox, cut_count=len(members), layer_name=rep.layer_name)
+        )
     return result
 
 

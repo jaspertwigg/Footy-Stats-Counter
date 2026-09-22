@@ -178,6 +178,16 @@ python make_pdf.py wallet.lcc \
   --label 3="Extra Pocket" --label 4="Front Pocket"
 ```
 
+For a `.lcc` file, you don't have to: if a piece sits on a LeathercraftCAD
+layer you've renamed (anything other than the default "Layer N"), that
+layer's name is used automatically -- the "Pieces found" summary marks it
+`(from layer)` so you can tell it apart from an explicit `--label`, which
+still always wins if you give one. Since layer names are typically a
+*category* ("Top Pockets") rather than a unique name per piece, two
+differently-shaped pieces on the same layer will show the same label —
+give one of them an explicit `--label` if you want them told apart on the
+page.
+
 The name is printed on that shape in bold, as large as will fit. If the
 piece has duplicates, its "Cut N" is parenthesized and always placed on
 its own line below the name, e.g.:

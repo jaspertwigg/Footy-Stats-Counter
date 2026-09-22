@@ -17,14 +17,30 @@ handle what's been observed in real files:
 
 Any shape "type" other than "LINE" is skipped and reported back in `info`
 rather than silently dropped or guessed at.
+
+LeathercraftCAD also lets a project define named "layers" (a top-level
+"layers" list with "id"/"nam") and puts each shape on one via its own
+"layer" field -- a project organised that way (e.g. a "Hidden Pockets"
+layer) hands us a piece's real name for free, instead of us having to
+guess it from geometry or a user re-typing it with --label. A layer left
+at its LeathercraftCAD-assigned default ("Layer N") carries no real
+information, so it's reported as None rather than as that placeholder.
 """
 
 from __future__ import annotations
 
 import json
-from typing import List
+import re
+from typing import List, Optional
 
 from .geometry import Polyline, flatten_cubic_bezier, DEFAULT_TOLERANCE_MM
+
+
+def _default_layer_name(layer_id, name: str) -> bool:
+    """True if `name` looks like LeathercraftCAD's own auto-assigned
+    "Layer N" placeholder for this id, rather than something the user typed.
+    """
+    return bool(re.fullmatch(r"Layer \d+", name)) and name == f"Layer {int(layer_id) + 1}"
 
 
 def read_lcc(path: str, tolerance: float = DEFAULT_TOLERANCE_MM, unit_override: float = None):
@@ -34,7 +50,14 @@ def read_lcc(path: str, tolerance: float = DEFAULT_TOLERANCE_MM, unit_override: 
     scale = unit_override if unit_override is not None else 1.0
     assumed_mm = unit_override is None
 
+    layer_names_by_id = {}
+    for layer in data.get("layers", []):
+        name = layer.get("nam", "")
+        if name and not _default_layer_name(layer.get("id", 0), name):
+            layer_names_by_id[str(layer.get("id"))] = name
+
     polylines: List[Polyline] = []
+    layer_names: List[Optional[str]] = []
     skipped_types = {}
     guessed_curves = 0
 
@@ -61,11 +84,13 @@ def read_lcc(path: str, tolerance: float = DEFAULT_TOLERANCE_MM, unit_override: 
             pts = [p0] + flatten_cubic_bezier(p0, p1, p2, p3, tolerance / max(scale, 1e-9))
 
         polylines.append([(x * scale, y * scale) for x, y in pts])
+        layer_names.append(layer_names_by_id.get(str(shape.get("layer"))))
 
     info = {
         "assumed_mm_no_units_declared": assumed_mm,
         "mm_per_unit": scale,
         "skipped_shape_types": skipped_types,
         "guessed_curve_count": guessed_curves,
+        "layer_names": layer_names,
     }
     return polylines, info

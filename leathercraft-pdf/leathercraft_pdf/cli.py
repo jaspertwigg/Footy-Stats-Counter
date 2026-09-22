@@ -185,7 +185,7 @@ def main(argv=None) -> int:
     width, height = maxx - minx, maxy - miny
     print(f"Overall canvas size: {width:.1f}mm x {height:.1f}mm", file=sys.stderr)
 
-    raw_pieces = group_into_pieces(polylines)
+    raw_pieces = group_into_pieces(polylines, layer_names=info.get("layer_names"))
     pieces = dedupe_identical_pieces(raw_pieces)
     duplicate_count = len(raw_pieces) - len(pieces)
     if duplicate_count:
@@ -239,13 +239,21 @@ def main(argv=None) -> int:
         flip_vertical(ordered[num - 1])
         flipped_nums.add(num)
 
+    def shape_label_for(piece, num):
+        # An explicit --label always wins; failing that, a real name already
+        # sitting in the source file (e.g. a LeathercraftCAD layer someone
+        # renamed) beats leaving the piece unlabeled.
+        return labels.get(num) or piece.layer_name
+
     print("Pieces found (use --label N=text to name one, e.g. --label 1='Outer Shell'):", file=sys.stderr)
     for p in ordered:
         num = piece_number[id(p)]
         pw, ph = p.bbox[2] - p.bbox[0], p.bbox[3] - p.bbox[1]
         tag = f"Cut {p.cut_count}" if p.cut_count > 1 else "single"
         shape_note = ", irregular/notched shape" if is_irregular_shape(p) else ""
-        named = f" -> {labels[num]!r}" if num in labels else ""
+        label = shape_label_for(p, num)
+        source = "" if num in labels else " (from layer)" if label else ""
+        named = f" -> {label!r}{source}" if label else ""
         flipped_note = " [flipped]" if num in flipped_nums else ""
         print(f"  piece {num}/{total_pieces}: {pw:.0f}x{ph:.0f}mm ({tag}{shape_note}){named}{flipped_note}", file=sys.stderr)
 
@@ -257,7 +265,7 @@ def main(argv=None) -> int:
         placements = []
         for piece, ox, oy in packed_page.placements:
             num = piece_number[id(piece)]
-            shape_label = labels.get(num)
+            shape_label = shape_label_for(piece, num)
             cut_label = cut_label_for(piece)
             centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
             piece_size = (piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1])
@@ -275,7 +283,7 @@ def main(argv=None) -> int:
         num = piece_number[id(piece)]
         pw, ph = piece.bbox[2] - piece.bbox[0], piece.bbox[3] - piece.bbox[1]
         cut_label = cut_label_for(piece)
-        shape_label = labels.get(num)
+        shape_label = shape_label_for(piece, num)
         centroid = polylines_centroid(piece.polylines) if (cut_label or shape_label) else None
         label_placed = False
         for tile in tiles:
