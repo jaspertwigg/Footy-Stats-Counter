@@ -236,7 +236,13 @@ paper efficiently, in this order:
 1. **The two largest pieces each get a page to themselves**, even if
    something smaller would technically fit alongside them — a big piece
    sharing a page with several small ones is easy to misread when you're
-   sorting through printouts.
+   sorting through printouts. But only when that's free: if the pattern is
+   mostly similar-sized pieces (say, four card-pocket overlays plus one
+   only slightly bigger), isolating the top two can burn pages that the
+   same pieces wouldn't have needed packed together. The tool also tries
+   isolating fewer (down to none) and keeps whichever uses the fewest
+   pages overall, so isolation only costs a page when it actually buys
+   something back in return.
 2. **Everything else is grouped by how similar its size is**, so a page
    tends to hold "the four card-slot pieces" rather than an arbitrary mix.
    This is a soft preference, not a hard rule: if a size group doesn't

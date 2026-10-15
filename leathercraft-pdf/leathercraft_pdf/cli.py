@@ -5,7 +5,7 @@ import sys
 
 from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox, polylines_centroid
 from .layout import PAGE_SIZES_MM, compute_tiles
-from .packing import pack_pieces
+from .packing import SOLO_LARGEST_COUNT, pack_pieces
 from .pieces import dedupe_identical_pieces, flip_vertical, group_into_pieces, is_irregular_shape
 from .render import PackedPageJob, PiecePlacement, TilePageJob, draw_pdf
 
@@ -98,15 +98,15 @@ def _parse_labels(label_args, total_pieces):
     return labels
 
 
-def _plan(pieces, page_size_mm, margin_mm, overlap_mm):
+def _plan(pieces, page_size_mm, margin_mm, overlap_mm, solo_largest_count=SOLO_LARGEST_COUNT):
     """Pack+tile `pieces` onto `page_size_mm` and return a comparable plan.
 
     Returns (packed_pages, oversized_with_tiles, total_pages) where
     oversized_with_tiles is a list of (piece, tiles) for pieces that didn't
-    fit whole. Used both to score a candidate orientation and, for the
-    winner, to actually build the output pages.
+    fit whole. Used both to score a candidate orientation/packing strategy
+    and, for the winner, to actually build the output pages.
     """
-    packed_pages, oversized = pack_pieces(pieces, page_size_mm, margin_mm)
+    packed_pages, oversized = pack_pieces(pieces, page_size_mm, margin_mm, solo_largest_count=solo_largest_count)
     oversized_with_tiles = [
         (piece, compute_tiles(piece.bbox, page_size_mm, margin_mm, overlap_mm)) for piece in oversized
     ]
@@ -200,23 +200,55 @@ def main(argv=None) -> int:
 
     landscape_size = (page_size[1], page_size[0])
     if args.orientation == "portrait":
-        candidates = [("portrait", page_size)]
+        orientation_candidates = [("portrait", page_size)]
     elif args.orientation == "landscape":
-        candidates = [("landscape", landscape_size)]
+        orientation_candidates = [("landscape", landscape_size)]
     else:
-        candidates = [("portrait", page_size), ("landscape", landscape_size)]
+        orientation_candidates = [("portrait", page_size), ("landscape", landscape_size)]
 
-    plans = {name: _plan(pieces, dims, args.margin_mm, args.overlap_mm) for name, dims in candidates}
-    best_name = min(plans, key=lambda name: (len(plans[name][1]), plans[name][2]))
-    page_size = dict(candidates)[best_name]
-    packed_pages, oversized_with_tiles, _ = plans[best_name]
+    # Isolating the largest pieces onto their own page (the default) looks
+    # cleaner, but only when it's free. Several similar-sized pieces (e.g.
+    # a set of card-pocket overlays) can end up needing extra pages purely
+    # because the two biggest were pulled onto solo pages before the rest
+    # ever got a chance to pack tightly together -- so also try relaxing
+    # that isolation, and only pay for it with a blank page when it
+    # actually buys something back in return.
+    solo_counts = list(range(SOLO_LARGEST_COUNT, -1, -1))
 
-    if len(candidates) > 1:
-        other = [n for n in plans if n != best_name][0]
+    plans = {
+        (name, solo_count): _plan(pieces, dims, args.margin_mm, args.overlap_mm, solo_count)
+        for name, dims in orientation_candidates
+        for solo_count in solo_counts
+    }
+
+    def _plan_key(key):
+        name, solo_count = key
+        _, oversized, total_pages = plans[key]
+        orientation_rank = next(i for i, (n, _) in enumerate(orientation_candidates) if n == name)
+        # Fewest oversized pieces, then fewest pages, then prefer isolating
+        # more of the largest pieces (nicer layout) when that's free, then
+        # keep the original portrait-before-landscape preference as the
+        # final tiebreak.
+        return (len(oversized), total_pages, -solo_count, orientation_rank)
+
+    best_key = min(plans, key=_plan_key)
+    best_name, best_solo_count = best_key
+    page_size = dict(orientation_candidates)[best_name]
+    packed_pages, oversized_with_tiles, _ = plans[best_key]
+
+    if len(orientation_candidates) > 1:
+        other_name = [n for n, _ in orientation_candidates if n != best_name][0]
+        other_key = min((k for k in plans if k[0] == other_name), key=_plan_key)
         print(
-            f"Orientation: {best_name} ({len(plans[best_name][1])} oversized piece(s), "
-            f"{plans[best_name][2]} page(s) total) beats {other} "
-            f"({len(plans[other][1])} oversized, {plans[other][2]} pages) -- using {best_name}.",
+            f"Orientation: {best_name} ({len(plans[best_key][1])} oversized piece(s), "
+            f"{plans[best_key][2]} page(s) total) beats {other_name} "
+            f"({len(plans[other_key][1])} oversized, {plans[other_key][2]} pages) -- using {best_name}.",
+            file=sys.stderr,
+        )
+    if best_solo_count < SOLO_LARGEST_COUNT:
+        print(
+            f"Packed pieces together more tightly than usual (giving only {best_solo_count} of the "
+            f"largest their own page, not the default {SOLO_LARGEST_COUNT}) to avoid extra pages.",
             file=sys.stderr,
         )
 
