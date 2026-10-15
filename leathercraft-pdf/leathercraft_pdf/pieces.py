@@ -220,6 +220,30 @@ def flip_vertical(piece: Piece) -> None:
     piece.polylines = [[(x, 2 * cy - y) for x, y in poly] for poly in piece.polylines]
 
 
+def rotate_90(piece: Piece) -> None:
+    """Rotate a piece's geometry (and its bbox) 90 degrees clockwise about
+    its own center, in place -- unlike `flip_vertical`, this *does* swap
+    the bbox's width and height, since that's the whole point: giving a
+    packer a piece turned on its side to fit it more tightly onto a page.
+
+    Only for a piece whose orientation on the hide genuinely doesn't
+    matter for this cut -- leather has a grain direction, so this is never
+    done automatically without the caller (or the person running the
+    tool) deciding it's fine here.
+    """
+    minx, miny, maxx, maxy = piece.bbox
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+
+    def rot(x, y):
+        dx, dy = x - cx, y - cy
+        return (cx + dy, cy - dx)
+
+    piece.polylines = [[rot(x, y) for x, y in poly] for poly in piece.polylines]
+    w, h = maxx - minx, maxy - miny
+    new_minx, new_miny = cx - h / 2.0, cy - w / 2.0
+    piece.bbox = (new_minx, new_miny, new_minx + h, new_miny + w)
+
+
 def is_irregular_shape(piece: Piece, length_tol_mm: float = 0.5) -> bool:
     """True if the piece has at least one substantial edge that's neither
     its bounding-box width nor height -- i.e. it's not a plain rectangle

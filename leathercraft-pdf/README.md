@@ -77,6 +77,7 @@ python make_pdf.py examples/duplicate_straps.dxf --label 2="Shoulder Strap" --la
 | `--dpi` | `96` | Assumed pixel density for SVGs with no physical width/height |
 | `--label N=TEXT` | *(none)* | Name piece number `N`, e.g. `--label 1="Outer Shell"`. Repeatable. |
 | `--flip N` | *(none)* | Mirror piece number `N` top-to-bottom in place, e.g. `--flip 5`. Repeatable. |
+| `--allow-rotation` | off | Allow turning pieces 90 degrees to pack onto fewer pages (see below) |
 
 ## Preserving exact dimensions
 
@@ -249,11 +250,20 @@ paper efficiently, in this order:
    exactly fill a page, the next group may fill the leftover space rather
    than starting a fresh sheet and wasting paper.
 
-Pieces are never rotated to pack tighter, since leather has a grain
-direction and a pattern piece's orientation usually matters. Pages
-themselves carry no piece-identifying text beyond a `--label` name (if you
-gave one) printed on the shape itself — match a page back to the numbered
-list this tool prints on every run if you need to.
+Pieces are never rotated to pack tighter by default, since leather has a
+grain direction and a pattern piece's orientation usually matters. Pass
+`--allow-rotation` to lift that when it genuinely doesn't matter for this
+pattern: the tool then also tries turning pieces 90 degrees, trying every
+rotated/unrotated combination (capped at 12 pieces, above which it's
+skipped with a warning rather than risk a slow search) alongside the
+orientation and solo-isolation search above, and keeps whichever
+combination uses the fewest pages while rotating as few pieces as
+possible to get there. Anything actually turned is marked `[rotated]` in
+the piece summary, so you can double-check it against the grain before
+cutting. Pages themselves carry no piece-identifying text beyond a
+`--label` name (if you gave one) printed on the shape itself — match a
+page back to the numbered list this tool prints on every run if you need
+to.
 
 Whatever ends up on a packed page — one piece alone, or several packed
 together — is then centered as a block within the printable area, both

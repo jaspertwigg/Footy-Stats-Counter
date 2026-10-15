@@ -1,7 +1,7 @@
 from leathercraft_pdf.cli import _plan
 from leathercraft_pdf.layout import PAGE_SIZES_MM
 from leathercraft_pdf.packing import SOLO_LARGEST_COUNT
-from leathercraft_pdf.pieces import Piece
+from leathercraft_pdf.pieces import Piece, rotate_90
 
 
 def _piece(w, h):
@@ -65,3 +65,28 @@ def test_plan_default_solo_largest_count_matches_packing_default():
     explicit = _plan(pieces, a4, 10.0, 15.0, solo_largest_count=SOLO_LARGEST_COUNT)
     default = _plan(pieces, a4, 10.0, 15.0)
     assert explicit == default
+
+
+def test_rotating_one_piece_can_close_the_last_gap_to_one_page():
+    # Same 5-piece card-holder scenario, landscape, solo isolation already
+    # fully relaxed -- still needs 2 pages (a 194mm-tall two-row layout on
+    # a 190mm-tall printable area). Turning just one of the four
+    # near-identical small pieces on its side, exactly what --allow-
+    # rotation's own search tries, is what actually closes that last gap.
+    # Each scenario gets its own fresh Pieces -- rotate_90 mutates in
+    # place, so sharing objects between the two would make "upright"
+    # secretly rotated too.
+    a4 = PAGE_SIZES_MM["A4"]
+    landscape = (a4[1], a4[0])
+    margin, overlap = 10.0, 15.0
+
+    upright = [_piece(102, 86)] + [_piece(102, 55) for _ in range(4)]
+    _, upright_oversized, upright_total = _plan(upright, landscape, margin, overlap, solo_largest_count=0)
+
+    rotated_one = [_piece(102, 86)] + [_piece(102, 55) for _ in range(4)]
+    rotate_90(rotated_one[1])
+    _, rotated_oversized, rotated_total = _plan(rotated_one, landscape, margin, overlap, solo_largest_count=0)
+
+    assert upright_oversized == rotated_oversized == []
+    assert upright_total == 2
+    assert rotated_total == 1

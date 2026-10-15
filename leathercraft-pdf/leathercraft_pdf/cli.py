@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import sys
 
 from .geometry import DEFAULT_TOLERANCE_MM, polyline_bbox, polylines_centroid
 from .layout import PAGE_SIZES_MM, compute_tiles
 from .packing import SOLO_LARGEST_COUNT, pack_pieces
-from .pieces import dedupe_identical_pieces, flip_vertical, group_into_pieces, is_irregular_shape
+from .pieces import Piece, dedupe_identical_pieces, flip_vertical, group_into_pieces, is_irregular_shape, rotate_90
 from .render import PackedPageJob, PiecePlacement, TilePageJob, draw_pdf
+
+# Trying every rotated/unrotated combination of N pieces is 2**N packing
+# attempts -- cheap for a typical pattern's piece count, but this caps it
+# so an unusually large pattern can't make --allow-rotation hang instead
+# of just skipping the search and falling back to no rotation.
+MAX_ROTATION_SEARCH_PIECES = 12
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,6 +78,18 @@ def build_parser() -> argparse.ArgumentParser:
             "180 degree rotation for a shape that's already left-right "
             "symmetric). Use when a piece was reconstructed upside-down "
             "relative to how it should read once assembled. Repeatable."
+        ),
+    )
+    p.add_argument(
+        "--allow-rotation", action="store_true",
+        help=(
+            "Allow pieces to be turned 90 degrees to pack more tightly onto "
+            "fewer pages. Off by default, since leather has a grain "
+            "direction that a piece's orientation on the hide usually needs "
+            "to respect -- only pass this when that genuinely doesn't "
+            "matter for every piece in this pattern. Whichever pieces "
+            "actually get turned are marked '[rotated]' in the summary this "
+            "tool prints on every run."
         ),
     )
     return p
@@ -215,30 +234,70 @@ def main(argv=None) -> int:
     # actually buys something back in return.
     solo_counts = list(range(SOLO_LARGEST_COUNT, -1, -1))
 
+    no_rotation = (False,) * len(pieces)
+    rotation_masks = [no_rotation]
+    if args.allow_rotation and pieces:
+        if len(pieces) <= MAX_ROTATION_SEARCH_PIECES:
+            rotation_masks = list(itertools.product([False, True], repeat=len(pieces)))
+        else:
+            print(
+                f"WARNING: --allow-rotation ignored -- {len(pieces)} pieces exceeds the "
+                f"{MAX_ROTATION_SEARCH_PIECES}-piece search limit.",
+                file=sys.stderr,
+            )
+
+    def _rotated_trial(piece, rotate):
+        # Packing only ever looks at bbox dimensions (see packing._dims),
+        # never the actual geometry -- so a trial "rotation" just needs a
+        # swapped bbox, not a real rotate_90 on a deep-copied piece. With
+        # up to 2**MAX_ROTATION_SEARCH_PIECES trials, skipping that copy is
+        # the difference between this search finishing instantly and it
+        # taking several seconds.
+        if not rotate:
+            return piece
+        minx, miny, maxx, maxy = piece.bbox
+        w, h = maxx - minx, maxy - miny
+        cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+        rotated_bbox = (cx - h / 2.0, cy - w / 2.0, cx + h / 2.0, cy + w / 2.0)
+        return Piece(polylines=piece.polylines, bbox=rotated_bbox, cut_count=piece.cut_count, layer_name=piece.layer_name)
+
     plans = {
-        (name, solo_count): _plan(pieces, dims, args.margin_mm, args.overlap_mm, solo_count)
+        (mask, name, solo_count): _plan(
+            [_rotated_trial(p, r) for p, r in zip(pieces, mask)], dims, args.margin_mm, args.overlap_mm, solo_count
+        )
+        for mask in rotation_masks
         for name, dims in orientation_candidates
         for solo_count in solo_counts
     }
 
     def _plan_key(key):
-        name, solo_count = key
+        mask, name, solo_count = key
         _, oversized, total_pages = plans[key]
         orientation_rank = next(i for i, (n, _) in enumerate(orientation_candidates) if n == name)
-        # Fewest oversized pieces, then fewest pages, then prefer isolating
-        # more of the largest pieces (nicer layout) when that's free, then
-        # keep the original portrait-before-landscape preference as the
-        # final tiebreak.
-        return (len(oversized), total_pages, -solo_count, orientation_rank)
+        # Fewest oversized pieces, then fewest pages, then fewest pieces
+        # turned (don't rotate anything unless it actually saves a page),
+        # then prefer isolating more of the largest pieces (nicer layout)
+        # when that's free, then keep the original portrait-before-
+        # landscape preference as the final tiebreak.
+        return (len(oversized), total_pages, sum(mask), -solo_count, orientation_rank)
 
     best_key = min(plans, key=_plan_key)
-    best_name, best_solo_count = best_key
+    best_mask, best_name, best_solo_count = best_key
     page_size = dict(orientation_candidates)[best_name]
-    packed_pages, oversized_with_tiles, _ = plans[best_key]
+
+    # The winning trial packed temporary rotated *copies*; apply the same
+    # rotation for real to the actual pieces so everything downstream
+    # (numbering, labels, the final render) works from one true state.
+    rotated_piece_ids = set()
+    for piece, rotate in zip(pieces, best_mask):
+        if rotate:
+            rotate_90(piece)
+            rotated_piece_ids.add(id(piece))
+    packed_pages, oversized_with_tiles, _ = _plan(pieces, page_size, args.margin_mm, args.overlap_mm, best_solo_count)
 
     if len(orientation_candidates) > 1:
         other_name = [n for n, _ in orientation_candidates if n != best_name][0]
-        other_key = min((k for k in plans if k[0] == other_name), key=_plan_key)
+        other_key = min((k for k in plans if k[1] == other_name), key=_plan_key)
         print(
             f"Orientation: {best_name} ({len(plans[best_key][1])} oversized piece(s), "
             f"{plans[best_key][2]} page(s) total) beats {other_name} "
@@ -251,6 +310,13 @@ def main(argv=None) -> int:
             f"largest their own page, not the default {SOLO_LARGEST_COUNT}) to avoid extra pages.",
             file=sys.stderr,
         )
+    if rotated_piece_ids:
+        print(
+            f"Rotated {len(rotated_piece_ids)} piece(s) 90 degrees to pack onto fewer pages -- "
+            "double-check that doesn't fight the leather's grain direction for those pieces "
+            "(marked '[rotated]' below).",
+            file=sys.stderr,
+        )
 
     # Number pieces in reading order (top-to-bottom, left-to-right on the
     # original canvas) so terminal output and on-page labels agree with how
@@ -258,6 +324,7 @@ def main(argv=None) -> int:
     ordered = sorted(pieces, key=lambda p: (-p.bbox[3], p.bbox[0]))
     piece_number = {id(p): i + 1 for i, p in enumerate(ordered)}
     total_pieces = len(pieces)
+    rotated_nums = {piece_number[pid] for pid in rotated_piece_ids}
 
     labels = _parse_labels(args.label, total_pieces)
     if labels is None:
@@ -287,7 +354,11 @@ def main(argv=None) -> int:
         source = "" if num in labels else " (from layer)" if label else ""
         named = f" -> {label!r}{source}" if label else ""
         flipped_note = " [flipped]" if num in flipped_nums else ""
-        print(f"  piece {num}/{total_pieces}: {pw:.0f}x{ph:.0f}mm ({tag}{shape_note}){named}{flipped_note}", file=sys.stderr)
+        rotated_note = " [rotated]" if num in rotated_nums else ""
+        print(
+            f"  piece {num}/{total_pieces}: {pw:.0f}x{ph:.0f}mm ({tag}{shape_note}){named}{flipped_note}{rotated_note}",
+            file=sys.stderr,
+        )
 
     def cut_label_for(piece):
         return f"Cut {piece.cut_count}" if piece.cut_count > 1 else None
