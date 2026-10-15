@@ -99,7 +99,7 @@ def _label_text_blocks(content: str):
             text = _unescape_pdf_string(m.group(1))
             # Skip page furniture (header title, scale bar) -- easy to tell
             # apart since none of it looks like a piece label in these tests.
-            if text in ("5cm", "3cm", "test.dxf"):
+            if text in ("5cm", "3cm", "test"):
                 continue
             results.append((current_size, text, current_y))
     return results

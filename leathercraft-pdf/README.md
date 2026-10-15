@@ -286,10 +286,15 @@ is its own full page, clipped to its own rectangle, with:
 - **A small position diagram** in the corner showing which tile you're
   holding.
 
-Every page carries just a clean title (the source filename) at the top and
-the scale bar described above — no page numbers, piece lists, or print
-instructions cluttering it. Cut along the crop marks, overlap adjacent
-tiled sheets so the crosshairs line up exactly, then tape.
+Every page carries a clean title at the top — the source filename turned
+into a readable pattern name (underscores become spaces, the extension
+and any trailing "- Copy" are dropped) — plus the scale bar described
+above. A multi-page job also gets a small, muted "N / total" page number
+tucked into the bottom-right margin, just enough to keep pages in order;
+a single-page job gets none, since there's nothing to number. No piece
+lists or print instructions cluttering it beyond that. Cut along the crop
+marks, overlap adjacent tiled sheets so the crosshairs line up exactly,
+then tape.
 
 ## Supported input
 

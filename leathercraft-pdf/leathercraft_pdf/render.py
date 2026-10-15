@@ -19,6 +19,7 @@ Two kinds of pages come out of the pipeline (see cli.py / packing.py):
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -87,6 +88,22 @@ def _mm(v: float) -> float:
     return v * MM_TO_PT
 
 
+def _clean_title(source_name: str) -> str:
+    """A human-readable pattern name for the header, derived from the
+    source filename -- strips the extension, drops a leading upload-id
+    hash prefix (an artifact of how a file reached us, not part of its
+    name), swaps underscores for spaces, and drops a trailing "- Copy"
+    (a common artifact of duplicating a file to experiment on, not part
+    of the pattern's real name), rather than printing the literal
+    filename verbatim.
+    """
+    name = os.path.splitext(os.path.basename(source_name))[0]
+    name = re.sub(r"^[0-9a-f]{6,12}-(?=[A-Za-z])", "", name)
+    name = name.replace("_", " ")
+    name = re.sub(r"\s*-\s*Copy\s*$", "", name, flags=re.IGNORECASE)
+    return " ".join(name.split())
+
+
 def draw_pdf(
     output_path: str,
     pages: List,  # list of PackedPageJob | TilePageJob, in the order they should be printed
@@ -96,13 +113,14 @@ def draw_pdf(
 ):
     page_w, page_h = page_size_mm
     c = rl_canvas.Canvas(output_path, pagesize=(_mm(page_w), _mm(page_h)))
-    title = os.path.basename(source_name)
+    title = _clean_title(source_name)
+    total_pages = len(pages)
 
-    for page in pages:
+    for page_num, page in enumerate(pages, start=1):
         if isinstance(page, TilePageJob):
-            _draw_tile_page(c, page, page_size_mm, margin_mm, title)
+            _draw_tile_page(c, page, page_size_mm, margin_mm, title, page_num, total_pages)
         else:
-            _draw_packed_page(c, page, page_size_mm, margin_mm, title)
+            _draw_packed_page(c, page, page_size_mm, margin_mm, title, page_num, total_pages)
         c.showPage()
 
     c.save()
@@ -124,7 +142,7 @@ def _stroke_polylines(c, to_page, polylines, clip_rect):
         c.drawPath(path, stroke=1, fill=0)
 
 
-def _draw_tile_page(c, job: TilePageJob, page_size_mm, margin_mm, title):
+def _draw_tile_page(c, job: TilePageJob, page_size_mm, margin_mm, title, page_num, total_pages):
     page_w, page_h = page_size_mm
     tile = job.tile
     x0, y0, x1, y1 = tile.rect
@@ -156,12 +174,13 @@ def _draw_tile_page(c, job: TilePageJob, page_size_mm, margin_mm, title):
     _draw_crop_marks(c, page_w, page_h, margin_mm)
     _draw_scale_bar(c, margin_mm)
     _draw_header(c, page_w, page_h, margin_mm, title)
+    _draw_page_number(c, page_w, margin_mm, page_num, total_pages)
     _draw_overview(c, tile, page_w, page_h, margin_mm)
 
     c.restoreState()
 
 
-def _draw_packed_page(c, job: PackedPageJob, page_size_mm, margin_mm, title):
+def _draw_packed_page(c, job: PackedPageJob, page_size_mm, margin_mm, title, page_num, total_pages):
     page_w, page_h = page_size_mm
     printable_w, printable_h = page_w - 2 * margin_mm, page_h - 2 * margin_mm
 
@@ -189,6 +208,7 @@ def _draw_packed_page(c, job: PackedPageJob, page_size_mm, margin_mm, title):
     _draw_crop_marks(c, page_w, page_h, margin_mm)
     _draw_scale_bar(c, margin_mm)
     _draw_header(c, page_w, page_h, margin_mm, title)
+    _draw_page_number(c, page_w, margin_mm, page_num, total_pages)
 
     c.restoreState()
 
@@ -536,9 +556,23 @@ def _draw_header(c, page_w, page_h, margin_mm, title):
     """Just the title, centered in the top margin -- plain text, no rule,
     box, or other decoration underneath it.
     """
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Helvetica-Bold", 11)
     c.setFillColorRGB(0, 0, 0)
-    c.drawCentredString(_mm(page_w / 2.0), _mm(page_h - margin_mm * 0.6), title)
+    c.drawCentredString(_mm(page_w / 2.0), _mm(page_h - margin_mm * 0.62), title)
+
+
+def _draw_page_number(c, page_w, margin_mm, page_num, total_pages):
+    """A small, muted page indicator tucked into the bottom-right margin
+    -- enough to keep a multi-page set in order without reviving the old
+    multi-line footer (piece counts, print instructions, etc). Skipped
+    entirely on a single-page job, where there's nothing to number.
+    """
+    if total_pages <= 1:
+        return
+    c.setFont("Helvetica", 7)
+    c.setFillColorRGB(0.45, 0.45, 0.45)
+    c.drawRightString(_mm(page_w - margin_mm * 0.4), _mm(margin_mm * 0.45), f"{page_num} / {total_pages}")
+    c.setFillColorRGB(0, 0, 0)
 
 
 def _draw_overview(c, tile: Tile, page_w, page_h, margin_mm):
